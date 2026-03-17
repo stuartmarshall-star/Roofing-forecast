@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roofing Forecast</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #1a1a1a; font-size: 14px; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
+  .header-left h1 { font-size: 20px; font-weight: 600; }
+  .header-left p { font-size: 13px; color: #666; margin-top: 2px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid #e0e0e0; margin-bottom: 1.5rem; }
+  .tab { padding: 8px 18px; font-size: 13px; cursor: pointer; border: none; border-bottom: 2px solid transparent; color: #666; background: none; font-family: inherit; }
+  .tab.active { color: #1a1a1a; border-bottom-color: #1a1a1a; font-weight: 500; }
+  .section { display: none; }
+  .section.active { display: block; }
+  .metric-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 1.5rem; }
+  .metric { background: #fff; border-radius: 8px; padding: 14px 16px; border: 1px solid #e8e8e8; }
+  .metric-label { font-size: 12px; color: #888; margin-bottom: 4px; }
+  .metric-value { font-size: 22px; font-weight: 600; }
+  .card { background: #fff; border: 1px solid #e8e8e8; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+  label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
+  input, select { width: 100%; font-size: 13px; padding: 7px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; color: #1a1a1a; font-family: inherit; }
+  input:focus, select:focus { outline: none; border-color: #888; }
+  .form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 1rem; }
+  .btn { padding: 8px 18px; font-size: 13px; border: 1px solid #ddd; border-radius: 6px; background: #fff; color: #1a1a1a; cursor: pointer; font-family: inherit; }
+  .btn:hover { background: #f5f5f5; }
+  .btn-primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  .btn-primary:hover { background: #333; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-danger { border-color: #fca5a5; color: #dc2626; }
+  .btn-danger:hover { background: #fef2f2; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; font-weight: 500; color: #666; border-bottom: 1px solid #f0f0f0; font-size: 12px; white-space: nowrap; background: #fafafa; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f5f5f5; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafafa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+  .badge-actual { background: #dcfce7; color: #16a34a; }
+  .badge-reforecast { background: #fef9c3; color: #a16207; }
+  .badge-forecast { background: #dbeafe; color: #1d4ed8; }
+  .badge-active { background: #dcfce7; color: #16a34a; }
+  .badge-future { background: #dbeafe; color: #1d4ed8; }
+  .badge-complete { background: #f3f4f6; color: #6b7280; }
+  .badge-cat-loan { background: #ede9fe; color: #6d28d9; }
+  .badge-cat-hire { background: #fef3c7; color: #b45309; }
+  .badge-cat-lease { background: #dbeafe; color: #1d4ed8; }
+  .badge-cat-insurance { background: #dcfce7; color: #15803d; }
+  .badge-cat-tax { background: #fee2e2; color: #b91c1c; }
+  .badge-cat-other { background: #f3f4f6; color: #4b5563; }
+  .liab-ongoing { font-size: 11px; color: #6d28d9; background: #ede9fe; padding: 2px 7px; border-radius: 8px; }
+  .actual-input { width: 100px !important; padding: 4px 8px !important; font-size: 12px !important; }
+  .forecast-val { color: #aaa; font-style: italic; font-size: 12px; }
+  .reforecast-val { color: #a16207; font-size: 12px; }
+  .green { color: #16a34a; }
+  .red { color: #dc2626; }
+  .progress-bar-wrap { background: #f0f0f0; border-radius: 4px; height: 6px; margin-top: 3px; }
+  .progress-bar { height: 6px; border-radius: 4px; }
+  .empty-state { text-align: center; padding: 3rem; color: #999; }
+  .balance-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 1rem; }
+  .balance-box { background: #f9f9f9; border-radius: 8px; padding: 12px 14px; border: 1px solid #eee; }
+  .balance-box-label { font-size: 11px; color: #888; margin-bottom: 3px; }
+  .balance-box-val { font-size: 16px; font-weight: 600; margin-bottom: 3px; }
+  .pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1.25rem; }
+  .job-pill { padding: 6px 16px; font-size: 13px; border: 1px solid #ddd; border-radius: 20px; cursor: pointer; background: #fff; color: #666; font-family: inherit; }
+  .job-pill.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  .status-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 1.25rem; border: 1px solid transparent; }
+  .status-connected { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+  .status-disconnected { background: #f3f4f6; color: #6b7280; border-color: #e5e7eb; }
+  .status-error { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+  .status-connecting { background: #fef9c3; color: #a16207; border-color: #fde68a; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .dot-green { background: #16a34a; }
+  .dot-gray { background: #9ca3af; }
+  .dot-red { background: #dc2626; }
+  .dot-amber { background: #d97706; }
+  .saving { font-size: 12px; color: #888; }
+  .chart-wrap { position: relative; width: 100%; height: 280px; margin-bottom: 1.5rem; }
+  .section-label { font-size: 12px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .05em; margin: 1.25rem 0 .6rem; }
+  .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 100; align-items: center; justify-content: center; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: #fff; border-radius: 12px; padding: 1.5rem; width: min(580px, 95vw); max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+  .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 1.25rem; }
+  .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 1.25rem; }
+  .sub-label { font-size: 13px; font-weight: 500; color: #888; margin-bottom: 8px; }
+  @media (max-width: 640px) {
+    .metric-row { grid-template-columns: repeat(2, 1fr); }
+    .form-grid { grid-template-columns: 1fr; }
+    .balance-strip { grid-template-columns: 1fr; }
+  }
+  /* PIN lock */
+  #pin-screen { position: fixed; inset: 0; background: #f5f5f5; z-index: 999; display: flex; align-items: center; justify-content: center; }
+  #pin-screen.hidden { display: none; }
+  .pin-card { background: #fff; border-radius: 14px; border: 1px solid #e8e8e8; padding: 2.5rem 2rem; width: min(360px, 92vw); text-align: center; box-shadow: 0 4px 24px rgba(0,0,0,.08); }
+  .pin-card h2 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+  .pin-card p { font-size: 13px; color: #888; margin-bottom: 1.75rem; }
+  .pin-dots { display: flex; justify-content: center; gap: 14px; margin-bottom: 1.75rem; }
+  .pin-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #ddd; background: transparent; transition: background .15s, border-color .15s; }
+  .pin-dot.filled { background: #1a1a1a; border-color: #1a1a1a; }
+  .pin-dot.error { background: #dc2626; border-color: #dc2626; }
+  .pin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 240px; margin: 0 auto 1rem; }
+  .pin-btn { padding: 16px; font-size: 18px; font-weight: 500; border: 1px solid #e8e8e8; border-radius: 10px; background: #fff; cursor: pointer; font-family: inherit; transition: background .1s; }
+  .pin-btn:hover { background: #f5f5f5; }
+  .pin-btn:active { background: #e8e8e8; }
+  .pin-btn.del { font-size: 14px; color: #888; }
+  .pin-error { font-size: 13px; color: #dc2626; min-height: 20px; margin-top: 4px; }
+  .pin-hint { font-size: 12px; color: #bbb; margin-top: 1rem; }
+</style>
+</head>
+<body>
+
+<!-- PIN lock screen -->
+<div id="pin-screen">
+  <div class="pin-card">
+    <h2>Roofing Forecast</h2>
+    <p>Enter your PIN to continue</p>
+    <div class="pin-dots" id="pin-dots">
+      <div class="pin-dot" id="d0"></div>
+      <div class="pin-dot" id="d1"></div>
+      <div class="pin-dot" id="d2"></div>
+      <div class="pin-dot" id="d3"></div>
+    </div>
+    <div class="pin-grid">
+      <button class="pin-btn" onclick="pinPress('1')">1</button>
+      <button class="pin-btn" onclick="pinPress('2')">2</button>
+      <button class="pin-btn" onclick="pinPress('3')">3</button>
+      <button class="pin-btn" onclick="pinPress('4')">4</button>
+      <button class="pin-btn" onclick="pinPress('5')">5</button>
+      <button class="pin-btn" onclick="pinPress('6')">6</button>
+      <button class="pin-btn" onclick="pinPress('7')">7</button>
+      <button class="pin-btn" onclick="pinPress('8')">8</button>
+      <button class="pin-btn" onclick="pinPress('9')">9</button>
+      <button class="pin-btn" onclick="pinPress('0')" style="grid-column:2">0</button>
+      <button class="pin-btn del" onclick="pinDelete()">⌫</button>
+    </div>
+    <div class="pin-error" id="pin-error"></div>
+    <div class="pin-hint">Share this PIN with your accountant</div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="header">
+    <div class="header-left">
+      <h1>Roofing Forecast</h1>
+      <p id="period-label"></p>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span class="saving" id="saving-indicator"></span>
+      <button class="btn btn-primary" onclick="openAddJob()">+ Add job</button>
+    </div>
+  </div>
+
+  <div id="conn-status" class="status-bar status-connecting">
+    <span class="dot dot-amber"></span> Connecting to your database...
+  </div>
+
+  <div class="metric-row" id="metrics"></div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('jobs')">All jobs</button>
+    <button class="tab" onclick="showTab('actuals')">Enter actuals</button>
+    <button class="tab" onclick="showTab('liabilities')">Liabilities</button>
+    <button class="tab" onclick="showTab('forecast')">Forecast</button>
+  </div>
+
+  <div id="jobs" class="section active"><div class="empty-state">Connecting...</div></div>
+  <div id="actuals" class="section"></div>
+  <div id="liabilities" class="section"></div>
+  <div id="forecast" class="section">
+    <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;margin-bottom:1.25rem;background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:1rem 1.25rem;">
+      <div>
+        <label style="margin-bottom:4px">Start from</label>
+        <input type="month" id="fc-start" style="width:160px" onchange="renderForecastSection()">
+      </div>
+      <div>
+        <label style="margin-bottom:4px">Show</label>
+        <select id="fc-length" style="width:180px" onchange="onFcLengthChange()">
+          <option value="3">3 months</option>
+          <option value="6">6 months</option>
+          <option value="12" selected>12 months</option>
+          <option value="18">18 months</option>
+          <option value="24">24 months</option>
+          <option value="all">All jobs (start to end)</option>
+        </select>
+      </div>
+      <div>
+        <button class="btn" onclick="resetForecastControls()">Reset to today</button>
+      </div>
+      <div style="margin-left:auto;font-size:13px;color:#888;align-self:center" id="fc-range-label"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Liability Modal -->
+<div class="modal-backdrop" id="liab-modal-backdrop">
+  <div class="modal">
+    <div class="modal-title" id="liab-modal-title">Add liability</div>
+    <div class="form-grid">
+      <div><label>Name</label><input id="l-name" placeholder="e.g. Van finance"></div>
+      <div><label>Category</label>
+        <select id="l-cat">
+          <option value="loan">Loan repayment</option>
+          <option value="hire">Hire purchase</option>
+          <option value="lease">Lease / rent</option>
+          <option value="insurance">Insurance</option>
+          <option value="tax">Tax / HMRC</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div><label>Monthly amount (£)</label><input type="number" id="l-amount" placeholder="0"></div>
+    </div>
+    <div class="form-grid">
+      <div><label>Start month</label><input type="month" id="l-start"></div>
+      <div><label>Duration (months)</label><input type="number" id="l-dur" min="1" placeholder="e.g. 48"></div>
+      <div><label>Ongoing (no end date)</label>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+          <input type="checkbox" id="l-ongoing" style="width:auto" onchange="toggleOngoing()">
+          <span style="font-size:13px;color:#555">Tick if this never ends</span>
+        </div>
+      </div>
+    </div>
+    <div><label>Notes (optional)</label><input id="l-notes" placeholder="e.g. Nationwide loan ending Dec 2028"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeLiabModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveLiability()">Save liability</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Job Modal -->
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal">
+    <div class="modal-title" id="modal-title">Add job</div>
+    <div class="form-grid">
+      <div><label>Job name</label><input id="f-name" placeholder="e.g. Oak Street reroofing"></div>
+      <div><label>Client</label><input id="f-client" placeholder="Client name"></div>
+      <div><label>Status</label><select id="f-status"><option value="active">Active</option><option value="future">Future</option><option value="complete">Complete</option></select></div>
+    </div>
+    <div class="form-grid">
+      <div><label>Start month</label><input type="month" id="f-start"></div>
+      <div><label>Duration (months)</label><input type="number" id="f-dur" min="1" max="24" value="3"></div>
+      <div><label>Contracted value (£)</label><input type="number" id="f-contract" placeholder="0"></div>
+    </div>
+    <div class="sub-label">Forecast costs (total for whole job £)</div>
+    <div class="form-grid">
+      <div><label>Labour</label><input type="number" id="f-labour" placeholder="0"></div>
+      <div><label>Materials</label><input type="number" id="f-materials" placeholder="0"></div>
+      <div><label>Overhead / Other</label><input type="number" id="f-overhead" placeholder="0"></div>
+    </div>
+    <div class="sub-label">Billing</div>
+    <div class="form-grid">
+      <div><label>Retention % held by client</label><input type="number" id="f-retention" value="5" min="0" max="100"></div>
+      <div></div><div></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveJob()">Save job</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── PIN lock ─────────────────────────────────────────────────────────────────
+// To change the PIN, update this value (must be 4 digits)
+const CORRECT_PIN = '1976';
+
+/*
+  SUPABASE SETUP — run this SQL in your Supabase SQL Editor if not already done:
+
+  create table liabilities (
+    id uuid primary key default gen_random_uuid(),
+    name text not null,
+    category text default 'other',
+    amount numeric default 0,
+    start_month text,
+    duration integer,
+    ongoing boolean default false,
+    notes text,
+    created_at timestamptz default now()
+  );
+  alter table liabilities enable row level security;
+  create policy "Public access" on liabilities for all using (true) with check (true);
+*/
+
+let pinEntry = '';
+
+function pinPress(digit) {
+  if (pinEntry.length >= 4) return;
+  pinEntry += digit;
+  updatePinDots();
+  if (pinEntry.length === 4) checkPin();
+}
+
+function pinDelete() {
+  pinEntry = pinEntry.slice(0, -1);
+  updatePinDots();
+  document.getElementById('pin-error').textContent = '';
+}
+
+function updatePinDots(state) {
+  for (let i = 0; i < 4; i++) {
+    const dot = document.getElementById('d' + i);
+    dot.className = 'pin-dot';
+    if (state === 'error') dot.classList.add('error');
+    else if (i < pinEntry.length) dot.classList.add('filled');
+  }
+}
+
+function checkPin() {
+  if (pinEntry === CORRECT_PIN) {
+    try { sessionStorage.setItem('rf_auth', '1'); } catch(e) {}
+    document.getElementById('pin-screen').classList.add('hidden');
+  } else {
+    updatePinDots('error');
+    document.getElementById('pin-error').textContent = 'Incorrect PIN — try again';
+    setTimeout(() => { pinEntry = ''; updatePinDots(); document.getElementById('pin-error').textContent = ''; }, 1200);
+  }
+}
+
+// Check if already authenticated this session
+try { if (sessionStorage.getItem('rf_auth') === '1') document.getElementById('pin-screen').classList.add('hidden'); } catch(e) {}
+
+// Allow keyboard input for PIN
+document.addEventListener('keydown', e => {
+  if (document.getElementById('pin-screen').classList.contains('hidden')) return;
+  if (e.key >= '0' && e.key <= '9') pinPress(e.key);
+  if (e.key === 'Backspace') pinDelete();
+});
+
+// ── Supabase credentials ─────────────────────────────────────────────────────
+const SB_URL = 'https://asaedxtvehsjmrkdpegj.supabase.co';
+const SB_KEY = 'sb_publishable_IklQe45ab06L_eIrjeUeQg_wifiK9FA';
+
+let jobs = [];
+let liabilities = [];
+let editIdx = null;
+let editLiabIdx = null;
+let activeActualsJob = 0;
+let forecastChartInst = null;
+let saveTimer = null;
+let isConnected = false;
+let fcStartMonth = '';
+let fcLength = 12;
+
+// ── Supabase helpers ─────────────────────────────────────────────────────────
+function sbHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    'apikey': SB_KEY,
+    'Authorization': 'Bearer ' + SB_KEY,
+    'Prefer': 'return=representation'
+  };
+}
+
+async function sbFetch(path, opts = {}) {
+  const res = await fetch(SB_URL + '/rest/v1/' + path, { headers: sbHeaders(), ...opts });
+  if (!res.ok) { const t = await res.text(); throw new Error(t); }
+  const text = await res.text();
+  return text ? JSON.parse(text) : [];
+}
+
+function dbToJob(row) {
+  return {
+    id: row.id, name: row.name, client: row.client || '',
+    status: row.status || 'active', start: row.start_month, dur: row.duration,
+    contract: parseFloat(row.contract) || 0, labour: parseFloat(row.labour) || 0,
+    materials: parseFloat(row.materials) || 0, overhead: parseFloat(row.overhead) || 0,
+    retention: parseFloat(row.retention) || 5, actuals: row.actuals || {}
+  };
+}
+
+function jobToDb(j) {
+  return {
+    name: j.name, client: j.client, status: j.status, start_month: j.start,
+    duration: j.dur, contract: j.contract, labour: j.labour,
+    materials: j.materials, overhead: j.overhead, retention: j.retention, actuals: j.actuals
+  };
+}
+
+function setStatus(type, msg) {
+  const el = document.getElementById('conn-status');
+  const dotMap = { connected: 'dot-green', error: 'dot-red', connecting: 'dot-amber', disconnected: 'dot-gray' };
+  const barMap = { connected: 'status-connected', error: 'status-error', connecting: 'status-connecting', disconnected: 'status-disconnected' };
+  el.className = 'status-bar ' + (barMap[type] || 'status-disconnected');
+  el.innerHTML = `<span class="dot ${dotMap[type] || 'dot-gray'}"></span> ${msg}`;
+}
+
+function setSaving(msg) { document.getElementById('saving-indicator').textContent = msg; }
+
+async function loadJobs() {
+  setStatus('connecting', 'Connecting to your database...');
+  try {
+    const [jobData, liabData] = await Promise.all([
+      sbFetch('jobs?select=*&order=created_at.asc'),
+      sbFetch('liabilities?select=*&order=created_at.asc').catch(() => [])
+    ]);
+    jobs = jobData.map(dbToJob);
+    liabilities = liabData.map(dbToLiab);
+    isConnected = true;
+    setStatus('connected', 'Connected — all changes save automatically and sync live with your accountant');
+    setupRealtime();
+    renderAll();
+  } catch(e) {
+    isConnected = false;
+    setStatus('error', 'Could not connect: ' + e.message);
+    renderAll();
+  }
+}
+
+function dbToLiab(row) {
+  return {
+    id: row.id, name: row.name, category: row.category || 'other',
+    amount: parseFloat(row.amount) || 0,
+    start: row.start_month, dur: row.duration || null,
+    ongoing: row.ongoing || false, notes: row.notes || ''
+  };
+}
+
+function liabToDb(l) {
+  return {
+    name: l.name, category: l.category, amount: l.amount,
+    start_month: l.start, duration: l.ongoing ? null : l.dur,
+    ongoing: l.ongoing, notes: l.notes
+  };
+}
+
+async function dbSaveLiab(liab) {
+  if (!isConnected) return;
+  setSaving('Saving...');
+  try {
+    if (liab.id) {
+      await sbFetch('liabilities?id=eq.' + liab.id, { method: 'PATCH', body: JSON.stringify(liabToDb(liab)) });
+    } else {
+      const res = await sbFetch('liabilities', { method: 'POST', body: JSON.stringify(liabToDb(liab)) });
+      if (res && res[0]) liab.id = res[0].id;
+    }
+    setSaving('Saved ✓'); setTimeout(() => setSaving(''), 2000);
+  } catch(e) { setSaving('Save failed: ' + e.message); }
+}
+
+async function dbDeleteLiab(id) {
+  if (!isConnected || !id) return;
+  await sbFetch('liabilities?id=eq.' + id, { method: 'DELETE' });
+}
+
+function setupRealtime() {
+  try {
+    const wsUrl = SB_URL.replace('https://', 'wss://') + '/realtime/v1/websocket?apikey=' + SB_KEY + '&vsn=1.0.0';
+    const ws = new WebSocket(wsUrl);
+    ws.onopen = () => ws.send(JSON.stringify({ topic: 'realtime:public:jobs', event: 'phx_join', payload: {}, ref: '1' }));
+    ws.onmessage = async (e) => {
+      const msg = JSON.parse(e.data);
+      if (['INSERT','UPDATE','DELETE'].includes(msg.event)) {
+        const data = await sbFetch('jobs?select=*&order=created_at.asc');
+        jobs = data.map(dbToJob);
+        renderAll();
+        setSaving('Synced from another user');
+        setTimeout(() => setSaving(''), 2500);
+      }
+    };
+  } catch(e) {}
+}
+
+async function dbSave(job) {
+  if (!isConnected) return;
+  setSaving('Saving...');
+  try {
+    if (job.id) {
+      await sbFetch('jobs?id=eq.' + job.id, { method: 'PATCH', body: JSON.stringify(jobToDb(job)) });
+    } else {
+      const res = await sbFetch('jobs', { method: 'POST', body: JSON.stringify(jobToDb(job)) });
+      if (res && res[0]) job.id = res[0].id;
+    }
+    setSaving('Saved ✓');
+    setTimeout(() => setSaving(''), 2000);
+  } catch(e) { setSaving('Save failed: ' + e.message); }
+}
+
+async function dbDelete(id) {
+  if (!isConnected || !id) return;
+  await sbFetch('jobs?id=eq.' + id, { method: 'DELETE' });
+}
+
+// ── Forecast engine ──────────────────────────────────────────────────────────
+function getMonths(start, dur) {
+  const months = [], [y, m] = start.split('-').map(Number);
+  for (let i = 0; i < dur; i++) {
+    const d = new Date(y, m - 1 + i);
+    months.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+  }
+  return months;
+}
+
+function monthLabel(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m - 1).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+}
+
+function getCurrentMonth() {
+  const n = new Date();
+  return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
+}
+
+function fmt(n) { return '£' + Math.round(n).toLocaleString('en-GB'); }
+function fmtPct(n) { return (Math.round(n * 10) / 10).toFixed(1) + '%'; }
+
+function buildSchedule(job, field) {
+  const months = getMonths(job.start, job.dur);
+  const originalTotal = field === 'billing' ? job.contract * (1 - job.retention / 100) : job[field];
+  let spentActual = 0;
+  const actMonths = new Set();
+  months.forEach(m => {
+    const a = job.actuals[m] && job.actuals[m][field] !== undefined ? job.actuals[m][field] : null;
+    if (a !== null) { spentActual += a; actMonths.add(m); }
+  });
+  const remaining = originalTotal - spentActual;
+  const remainingMonths = months.filter(m => !actMonths.has(m));
+  const reforecastPM = remainingMonths.length > 0 ? remaining / remainingMonths.length : 0;
+  const hasActuals = actMonths.size > 0;
+  const result = {};
+  months.forEach(m => {
+    const a = job.actuals[m] && job.actuals[m][field] !== undefined ? job.actuals[m][field] : null;
+    if (a !== null) result[m] = { value: a, type: 'actual' };
+    else if (hasActuals) result[m] = { value: reforecastPM, type: 'reforecast' };
+    else result[m] = { value: originalTotal / job.dur, type: 'original' };
+  });
+  return result;
+}
+
+function getSummary(job, field) {
+  const months = getMonths(job.start, job.dur);
+  const originalTotal = field === 'billing' ? job.contract * (1 - job.retention / 100) : job[field];
+  const sched = buildSchedule(job, field);
+  let actualSpent = 0;
+  months.forEach(m => { if (sched[m].type === 'actual') actualSpent += sched[m].value; });
+  return { originalTotal, actualSpent, balance: originalTotal - actualSpent };
+}
+
+// ── Liability helpers ────────────────────────────────────────────────────────
+const CAT_LABELS = { loan:'Loan repayment', hire:'Hire purchase', lease:'Lease / rent', insurance:'Insurance', tax:'Tax / HMRC', other:'Other' };
+
+function getLiabMonths(liab) {
+  if (!liab.start) return new Set();
+  if (liab.ongoing) {
+    // Generate months from start up to 10 years out (enough for any forecast)
+    const months = new Set();
+    const [sy, sm] = liab.start.split('-').map(Number);
+    for (let i = 0; i < 120; i++) {
+      const d = new Date(sy, sm - 1 + i);
+      months.add(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'));
+    }
+    return months;
+  }
+  return new Set(getMonths(liab.start, liab.dur || 1));
+}
+
+function getTotalLiabilitiesForMonth(month) {
+  return liabilities.reduce((sum, l) => {
+    return getLiabMonths(l).has(month) ? sum + l.amount : sum;
+  }, 0);
+}
+
+function renderLiabilitiesSection() {
+  const el = document.getElementById('liabilities');
+  if (!el) return;
+
+  // Summary metrics
+  const cur = getCurrentMonth();
+  const monthlyNow = getTotalLiabilitiesForMonth(cur);
+  const annualTotal = liabilities.reduce((s, l) => {
+    const months = getLiabMonths(l);
+    let count = 0;
+    for (let i = 0; i < 12; i++) {
+      const d = new Date();
+      d.setDate(1); d.setMonth(d.getMonth() + i);
+      const m = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+      if (months.has(m)) count++;
+    }
+    return s + l.amount * count;
+  }, 0);
+
+  let html = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+      <div style="font-size:15px;font-weight:600">Liabilities</div>
+      <button class="btn btn-primary" onclick="openAddLiab()">+ Add liability</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:1.5rem">
+      <div class="metric"><div class="metric-label">Total liabilities</div><div class="metric-value">${liabilities.length}</div></div>
+      <div class="metric"><div class="metric-label">This month's payments</div><div class="metric-value red">${fmt(monthlyNow)}</div></div>
+      <div class="metric"><div class="metric-label">Next 12 months total</div><div class="metric-value red">${fmt(annualTotal)}</div></div>
+    </div>`;
+
+  if (!liabilities.length) {
+    html += '<div class="empty-state">No liabilities yet — click "+ Add liability" to get started.</div>';
+    el.innerHTML = html; return;
+  }
+
+  // Group by category
+  const cats = [...new Set(liabilities.map(l => l.category))];
+  cats.forEach(cat => {
+    const group = liabilities.filter(l => l.category === cat);
+    html += `<div style="font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em;margin:1.25rem 0 .5rem">${CAT_LABELS[cat] || cat}</div>
+    <div class="card" style="padding:0;overflow:hidden">
+    <table><thead><tr><th>Name</th><th>Monthly (£)</th><th>Start</th><th>Duration</th><th>End</th><th>Total commitment</th><th>Notes</th><th></th></tr></thead><tbody>`;
+    group.forEach((l, gi) => {
+      const globalIdx = liabilities.indexOf(l);
+      const endLabel = l.ongoing ? '<span class="liab-ongoing">Ongoing</span>' : (() => {
+        const ms = getMonths(l.start, l.dur || 1);
+        return monthLabel(ms[ms.length - 1]);
+      })();
+      const totalCommit = l.ongoing ? '—' : fmt(l.amount * (l.dur || 1));
+      const durLabel = l.ongoing ? 'Ongoing' : (l.dur || 1) + ' months';
+      html += `<tr>
+        <td><strong>${l.name}</strong></td>
+        <td class="red">${fmt(l.amount)}</td>
+        <td>${monthLabel(l.start)}</td>
+        <td>${durLabel}</td>
+        <td>${endLabel}</td>
+        <td>${totalCommit}</td>
+        <td style="color:#888;font-size:12px">${l.notes || '—'}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-sm" onclick="editLiability(${globalIdx})" style="margin-right:4px">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteLiability(${globalIdx})">Del</button>
+        </td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+  });
+
+  // Monthly breakdown for next 12 months
+  html += `<div style="font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em;margin:1.5rem 0 .5rem">Monthly breakdown — next 12 months</div>
+  <div class="card" style="padding:0;overflow:hidden"><table><thead><tr><th>Month</th>`;
+  const uniqCats = [...new Set(liabilities.map(l => l.category))];
+  uniqCats.forEach(c => { html += `<th>${CAT_LABELS[c]}</th>`; });
+  html += '<th>Total</th></tr></thead><tbody>';
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + i);
+    const m = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+    let rowTotal = 0;
+    html += `<tr><td>${monthLabel(m)}</td>`;
+    uniqCats.forEach(c => {
+      const catTotal = liabilities.filter(l => l.category === c && getLiabMonths(l).has(m)).reduce((s, l) => s + l.amount, 0);
+      rowTotal += catTotal;
+      html += `<td>${catTotal > 0 ? fmt(catTotal) : '<span style="color:#ccc">—</span>'}</td>`;
+    });
+    html += `<td class="red" style="font-weight:600">${rowTotal > 0 ? fmt(rowTotal) : '<span style="color:#ccc">—</span>'}</td></tr>`;
+  }
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
+}
+
+// ── Liability modal ──────────────────────────────────────────────────────────
+function openAddLiab() {
+  editLiabIdx = null;
+  document.getElementById('liab-modal-title').textContent = 'Add liability';
+  document.getElementById('l-name').value = '';
+  document.getElementById('l-amount').value = '';
+  document.getElementById('l-notes').value = '';
+  document.getElementById('l-dur').value = '';
+  document.getElementById('l-ongoing').checked = false;
+  document.getElementById('l-dur').disabled = false;
+  document.getElementById('l-cat').value = 'loan';
+  const now = new Date();
+  document.getElementById('l-start').value = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  document.getElementById('liab-modal-backdrop').classList.add('open');
+}
+
+function editLiability(idx) {
+  editLiabIdx = idx;
+  const l = liabilities[idx];
+  document.getElementById('liab-modal-title').textContent = 'Edit liability';
+  document.getElementById('l-name').value = l.name;
+  document.getElementById('l-amount').value = l.amount;
+  document.getElementById('l-cat').value = l.category;
+  document.getElementById('l-start').value = l.start;
+  document.getElementById('l-dur').value = l.dur || '';
+  document.getElementById('l-ongoing').checked = l.ongoing;
+  document.getElementById('l-dur').disabled = l.ongoing;
+  document.getElementById('l-notes').value = l.notes || '';
+  document.getElementById('liab-modal-backdrop').classList.add('open');
+}
+
+function toggleOngoing() {
+  const checked = document.getElementById('l-ongoing').checked;
+  document.getElementById('l-dur').disabled = checked;
+  if (checked) document.getElementById('l-dur').value = '';
+}
+
+function closeLiabModal() { document.getElementById('liab-modal-backdrop').classList.remove('open'); }
+
+async function saveLiability() {
+  const name = document.getElementById('l-name').value.trim();
+  if (!name) { alert('Please enter a name.'); return; }
+  const ongoing = document.getElementById('l-ongoing').checked;
+  const dur = parseInt(document.getElementById('l-dur').value) || null;
+  if (!ongoing && !dur) { alert('Please enter a duration or tick "Ongoing".'); return; }
+  const liab = {
+    id: editLiabIdx !== null ? liabilities[editLiabIdx].id : undefined,
+    name, category: document.getElementById('l-cat').value,
+    amount: parseFloat(document.getElementById('l-amount').value) || 0,
+    start: document.getElementById('l-start').value,
+    dur: ongoing ? null : dur, ongoing,
+    notes: document.getElementById('l-notes').value.trim()
+  };
+  if (editLiabIdx !== null) liabilities[editLiabIdx] = liab; else liabilities.push(liab);
+  closeLiabModal(); renderAll();
+  await dbSaveLiab(liab);
+  renderAll();
+}
+
+async function deleteLiability(idx) {
+  if (!confirm('Delete this liability?')) return;
+  const id = liabilities[idx].id;
+  liabilities.splice(idx, 1);
+  renderAll(); await dbDeleteLiab(id);
+}
+
+function renderMetrics() {
+  let tContract = 0, tCost = 0, tRetention = 0, active = 0;
+  jobs.forEach(j => {
+    tContract += j.contract; tCost += j.labour + j.materials + j.overhead;
+    if (j.status === 'active') active++;
+    tRetention += j.contract * j.retention / 100;
+  });
+  const margin = tContract > 0 ? (tContract - tCost) / tContract * 100 : 0;
+  document.getElementById('metrics').innerHTML = `
+    <div class="metric"><div class="metric-label">Active jobs</div><div class="metric-value">${active}</div></div>
+    <div class="metric"><div class="metric-label">Total contracted</div><div class="metric-value">${fmt(tContract)}</div></div>
+    <div class="metric"><div class="metric-label">Forecast margin</div><div class="metric-value ${margin >= 15 ? 'green' : 'red'}">${fmtPct(margin)}</div></div>
+    <div class="metric"><div class="metric-label">Retention held</div><div class="metric-value">${fmt(tRetention)}</div></div>`;
+  document.getElementById('period-label').textContent = 'As of ' + monthLabel(getCurrentMonth());
+}
+
+function renderJobsTable() {
+  const el = document.getElementById('jobs');
+  if (!jobs.length) { el.innerHTML = '<div class="empty-state">No jobs yet — click "+ Add job" to get started.</div>'; return; }
+  const cur = getCurrentMonth();
+  let html = '<div class="card" style="padding:0;overflow:hidden"><table><thead><tr><th>Job</th><th>Client</th><th>Period</th><th>Contract</th><th>Total cost</th><th>Margin</th><th>Progress</th><th>Status</th><th></th></tr></thead><tbody>';
+  jobs.forEach((j, i) => {
+    const tc = j.labour + j.materials + j.overhead;
+    const margin = j.contract > 0 ? (j.contract - tc) / j.contract * 100 : 0;
+    const months = getMonths(j.start, j.dur);
+    const pct = Math.round(months.filter(m => m <= cur).length / j.dur * 100);
+    html += `<tr>
+      <td><strong>${j.name}</strong></td><td>${j.client || '—'}</td>
+      <td style="white-space:nowrap">${monthLabel(j.start)} – ${monthLabel(months[months.length - 1])}</td>
+      <td>${fmt(j.contract)}</td><td>${fmt(tc)}</td>
+      <td class="${margin >= 15 ? 'green' : 'red'}">${fmtPct(margin)}</td>
+      <td style="min-width:100px">
+        <div style="font-size:11px;color:#888">${pct}% through</div>
+        <div class="progress-bar-wrap"><div class="progress-bar" style="width:${Math.min(pct,100)}%;background:#16a34a"></div></div>
+      </td>
+      <td><span class="badge badge-${j.status}">${j.status}</span></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick="showTab('actuals');setActualsJob(${i})" style="margin-right:4px">Actuals</button>
+        <button class="btn btn-sm" onclick="editJob(${i})" style="margin-right:4px">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteJob(${i})">Del</button>
+      </td></tr>`;
+  });
+  el.innerHTML = html + '</tbody></table></div>';
+}
+
+function setActualsJob(idx) { activeActualsJob = idx; renderActualsSection(); }
+
+function renderActualsSection() {
+  const el = document.getElementById('actuals');
+  if (!jobs.length) { el.innerHTML = '<div class="empty-state">No jobs yet.</div>'; return; }
+  const j = jobs[activeActualsJob]; if (!j) return;
+  const months = getMonths(j.start, j.dur), cur = getCurrentMonth();
+  const fields = ['labour', 'materials', 'overhead', 'billing'];
+  const scheds = {}; fields.forEach(f => { scheds[f] = buildSchedule(j, f); });
+
+  // Pills
+  let pills = '<div class="pill-row">' + jobs.map((jj, i) =>
+    `<button class="job-pill ${i === activeActualsJob ? 'active' : ''}" onclick="setActualsJob(${i})">${jj.name}</button>`).join('') + '</div>';
+
+  // Balance strip
+  let bal = '<div class="balance-strip">';
+  ['labour', 'materials', 'overhead'].forEach(f => {
+    const s = getSummary(j, f), pct = s.originalTotal > 0 ? Math.round(s.actualSpent / s.originalTotal * 100) : 0;
+    const lbl = { labour: 'Labour', materials: 'Materials', overhead: 'Overhead' }[f];
+    bal += `<div class="balance-box">
+      <div class="balance-box-label">${lbl} — budget</div>
+      <div class="balance-box-val">${fmt(s.originalTotal)}</div>
+      <div style="font-size:11px;color:#888;margin-top:2px">
+        <span style="color:#16a34a">Actual spent: ${fmt(s.actualSpent)}</span> &nbsp;|&nbsp; Remaining: ${fmt(s.balance)}
+      </div>
+      <div class="progress-bar-wrap" style="margin-top:6px"><div class="progress-bar" style="width:${Math.min(pct,100)}%;background:#16a34a"></div></div>
+    </div>`;
+  });
+  bal += '</div>';
+
+  const bs = getSummary(j, 'billing'), bpct = bs.originalTotal > 0 ? Math.round(bs.actualSpent / bs.originalTotal * 100) : 0;
+  bal += `<div class="balance-strip">
+    <div class="balance-box" style="grid-column:span 2">
+      <div class="balance-box-label">Billing received (excl. retention) — contract ${fmt(j.contract)}, retention ${j.retention}%</div>
+      <div class="balance-box-val">${fmt(bs.originalTotal)}</div>
+      <div style="font-size:11px;color:#888;margin-top:2px">
+        <span style="color:#16a34a">Received: ${fmt(bs.actualSpent)}</span> &nbsp;|&nbsp;
+        Still to bill: ${fmt(bs.balance)} &nbsp;|&nbsp; Retention: ${fmt(j.contract * j.retention / 100)}
+      </div>
+      <div class="progress-bar-wrap" style="margin-top:6px"><div class="progress-bar" style="width:${Math.min(bpct,100)}%;background:#1d4ed8"></div></div>
+    </div>
+    <div class="balance-box">
+      <div class="balance-box-label">Total cost remaining</div>
+      <div class="balance-box-val">${fmt(['labour','materials','overhead'].reduce((s,f) => s + getSummary(j, f).balance, 0))}</div>
+      <div style="font-size:11px;color:#888;margin-top:2px">Forecast spend still to come</div>
+    </div>
+  </div>`;
+
+  // Legend
+  const legend = `<div style="display:flex;gap:16px;font-size:12px;color:#888;margin-bottom:.75rem;flex-wrap:wrap">
+    <span><span class="badge badge-actual" style="margin-right:4px">actual</span> Figure you entered</span>
+    <span><span class="badge badge-reforecast" style="margin-right:4px">reforecast</span> Auto-adjusted from actuals</span>
+    <span><span class="badge badge-forecast" style="margin-right:4px">original forecast</span> Even spread, no actuals yet</span>
+  </div>`;
+
+  // Table
+  let tbl = '<div class="card" style="padding:0;overflow:hidden"><table><thead><tr><th>Month</th><th>Labour</th><th>Materials</th><th>Overhead</th><th>Total cost</th><th>Billing recv.</th><th>Cashflow</th><th>Type</th></tr></thead><tbody>';
+
+  months.forEach(m => {
+    const isPast = m <= cur, vals = {};
+    fields.forEach(f => { vals[f] = scheds[f][m]; });
+    const tc = vals.labour.value + vals.materials.value + vals.overhead.value;
+    const cash = vals.billing.value - tc;
+    const hasAct = fields.some(f => vals[f].type === 'actual');
+    const hasRef = fields.some(f => vals[f].type === 'reforecast');
+    const rowType = hasAct ? 'actual' : hasRef ? 'reforecast' : 'forecast';
+    const bg = hasAct ? 'background:#f9fafb' : '';
+
+    function cell(field) {
+      const e = vals[field];
+      const a = j.actuals[m] && j.actuals[m][field] !== undefined ? j.actuals[m][field] : '';
+      if (isPast) return `<input class="actual-input" type="number" placeholder="${Math.round(e.value)}" value="${a}" onchange="setActual(${activeActualsJob},'${m}','${field}',this.value)">`;
+      return `<span class="${e.type === 'reforecast' ? 'reforecast-val' : 'forecast-val'}">${fmt(e.value)}</span>`;
+    }
+
+    tbl += `<tr style="${bg}">
+      <td style="white-space:nowrap;font-weight:500">${monthLabel(m)}</td>
+      ${['labour','materials','overhead'].map(f => `<td>${cell(f)}</td>`).join('')}
+      <td style="font-weight:500">${fmt(tc)}</td>
+      <td>${cell('billing')}</td>
+      <td class="${cash >= 0 ? 'green' : 'red'}" style="font-weight:500">${cash >= 0 ? '+' : ''}${fmt(cash)}</td>
+      <td><span class="badge badge-${rowType}">${rowType}</span></td>
+    </tr>`;
+  });
+
+  let tL=0,tM=0,tO=0,tB=0;
+  months.forEach(m=>{tL+=scheds.labour[m].value;tM+=scheds.materials[m].value;tO+=scheds.overhead[m].value;tB+=scheds.billing[m].value;});
+  const tC=tL+tM+tO;
+  tbl += `<tr style="background:#f9fafb;font-weight:600">
+    <td>Total</td><td>${fmt(tL)}</td><td>${fmt(tM)}</td><td>${fmt(tO)}</td>
+    <td>${fmt(tC)}</td><td>${fmt(tB)}</td>
+    <td class="${tB-tC>=0?'green':'red'}">${tB-tC>=0?'+':''}${fmt(tB-tC)}</td><td></td>
+  </tr>`;
+
+  el.innerHTML = pills + bal + legend + tbl + '</tbody></table></div>';
+}
+
+function setActual(jobIdx, month, field, val) {
+  if (!jobs[jobIdx].actuals[month]) jobs[jobIdx].actuals[month] = {};
+  const n = parseFloat(val);
+  if (val === '' || isNaN(n)) delete jobs[jobIdx].actuals[month][field];
+  else jobs[jobIdx].actuals[month][field] = n;
+  renderAll();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => dbSave(jobs[jobIdx]), 800);
+}
+
+function initForecastControls() {
+  const cur = getCurrentMonth();
+  fcStartMonth = cur;
+  fcLength = 12;
+  const startEl = document.getElementById('fc-start');
+  if (startEl) startEl.value = cur;
+  const lenEl = document.getElementById('fc-length');
+  if (lenEl) lenEl.value = '12';
+}
+
+function onFcLengthChange() {
+  const val = document.getElementById('fc-length').value;
+  fcLength = val === 'all' ? 'all' : parseInt(val);
+  renderForecastSection();
+}
+
+function resetForecastControls() {
+  initForecastControls();
+  renderForecastSection();
+}
+
+function getForecastMonths() {
+  // Build the list of months to show based on controls
+  if (fcLength === 'all') {
+    // Span from earliest job start to latest job end across all jobs
+    if (!jobs.length) return [];
+    let earliest = null, latest = null;
+    jobs.forEach(j => {
+      const ms = getMonths(j.start, j.dur);
+      if (!earliest || ms[0] < earliest) earliest = ms[0];
+      const last = ms[ms.length - 1];
+      if (!latest || last > latest) latest = last;
+    });
+    const months = [];
+    let [y, m] = earliest.split('-').map(Number);
+    const [ey, em] = latest.split('-').map(Number);
+    while (y < ey || (y === ey && m <= em)) {
+      months.push(y + '-' + String(m).padStart(2, '0'));
+      m++; if (m > 12) { m = 1; y++; }
+    }
+    return months;
+  }
+  // Fixed length from chosen start
+  const start = fcStartMonth || getCurrentMonth();
+  const [sy, sm] = start.split('-').map(Number);
+  const months = [];
+  for (let i = 0; i < fcLength; i++) {
+    const d = new Date(sy, sm - 1 + i);
+    months.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+  }
+  return months;
+}
+
+function renderForecastSection() {
+  const el = document.getElementById('forecast');
+  if (!el) return;
+
+  // Sync control state from DOM
+  const startEl = document.getElementById('fc-start');
+  const lenEl = document.getElementById('fc-length');
+  if (startEl && startEl.value) fcStartMonth = startEl.value;
+  if (lenEl) fcLength = lenEl.value === 'all' ? 'all' : parseInt(lenEl.value);
+
+  // Ensure controls exist (re-render the controls block if section was wiped)
+  if (!document.getElementById('fc-start')) {
+    el.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;margin-bottom:1.25rem;background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:1rem 1.25rem;">
+      <div><label style="margin-bottom:4px">Start from</label><input type="month" id="fc-start" style="width:160px" onchange="renderForecastSection()"></div>
+      <div><label style="margin-bottom:4px">Show</label>
+        <select id="fc-length" style="width:180px" onchange="onFcLengthChange()">
+          <option value="3">3 months</option><option value="6">6 months</option>
+          <option value="12" selected>12 months</option><option value="18">18 months</option>
+          <option value="24">24 months</option><option value="all">All jobs (start to end)</option>
+        </select>
+      </div>
+      <div><button class="btn" onclick="resetForecastControls()">Reset to today</button></div>
+      <div style="margin-left:auto;font-size:13px;color:#888;align-self:center" id="fc-range-label"></div>
+    </div>
+    <div id="fc-content"></div>`;
+    document.getElementById('fc-start').value = fcStartMonth || getCurrentMonth();
+    document.getElementById('fc-length').value = fcLength === 'all' ? 'all' : String(fcLength);
+  }
+
+  const contentEl = document.getElementById('fc-content') || el;
+
+  if (!jobs.length) { contentEl.innerHTML = '<div class="empty-state">Add jobs to see the forecast.</div>'; return; }
+
+  const allMonths = getForecastMonths();
+  if (!allMonths.length) { contentEl.innerHTML = '<div class="empty-state">No jobs fall within this date range.</div>'; return; }
+
+  // Update range label
+  const rangeEl = document.getElementById('fc-range-label');
+  if (rangeEl) rangeEl.textContent = monthLabel(allMonths[0]) + ' – ' + monthLabel(allMonths[allMonths.length - 1]) + ' (' + allMonths.length + ' months)';
+
+  const rows = allMonths.map(m => {
+    let tL=0,tM=0,tO=0,tB=0;
+    jobs.forEach(j => {
+      const ms = getMonths(j.start, j.dur); if (!ms.includes(m)) return;
+      tL+=buildSchedule(j,'labour')[m].value; tM+=buildSchedule(j,'materials')[m].value;
+      tO+=buildSchedule(j,'overhead')[m].value; tB+=buildSchedule(j,'billing')[m].value;
+    });
+    const tC=tL+tM+tO;
+    const tLiab = getTotalLiabilitiesForMonth(m);
+    return {m,tL,tM,tO,tC,tB,tLiab,cash:tB-tC-tLiab};
+  });
+
+  if (forecastChartInst) { forecastChartInst.destroy(); forecastChartInst = null; }
+
+  // Adjust chart height for longer periods
+  const chartH = allMonths.length > 18 ? 320 : 280;
+
+  contentEl.innerHTML = `
+    <div style="display:flex;gap:18px;font-size:12px;color:#888;margin-bottom:.75rem;flex-wrap:wrap">
+      <span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:2px;background:rgba(22,163,74,0.7);display:inline-block"></span>Billing received</span>
+      <span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:2px;background:rgba(220,38,38,0.6);display:inline-block"></span>Job costs</span>
+      <span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:2px;background:rgba(109,40,217,0.6);display:inline-block"></span>Liabilities</span>
+      <span style="display:flex;align-items:center;gap:6px"><span style="width:24px;height:2px;background:#1d4ed8;display:inline-block"></span>Net cashflow</span>
+    </div>
+    <div style="position:relative;width:100%;height:${chartH}px;margin-bottom:1.5rem"><canvas id="forecastChart"></canvas></div>
+    <div id="ftable"></div>`;
+
+  forecastChartInst = new Chart(document.getElementById('forecastChart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: allMonths.map(monthLabel),
+      datasets: [
+        { label: 'Billing',      data: rows.map(r => Math.round(r.tB)),    backgroundColor: 'rgba(22,163,74,0.7)',  borderRadius: 3 },
+        { label: 'Job costs',    data: rows.map(r => Math.round(r.tC)),    backgroundColor: 'rgba(220,38,38,0.6)',  borderRadius: 3 },
+        { label: 'Liabilities',  data: rows.map(r => Math.round(r.tLiab)), backgroundColor: 'rgba(109,40,217,0.6)', borderRadius: 3 },
+        { label: 'Net cashflow', data: rows.map(r => Math.round(r.cash)),  type: 'line', borderColor: '#1d4ed8', backgroundColor: 'transparent', borderWidth: 2, pointRadius: allMonths.length > 18 ? 2 : 3, tension: 0.3 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { ticks: { callback: v => '£' + (Math.abs(v) >= 1000 ? (v/1000).toFixed(0) + 'k' : v), font: { size: 11 } }, grid: { color: '#f0f0f0' } },
+        x: { ticks: { font: { size: 11 }, maxRotation: allMonths.length > 12 ? 45 : 0, autoSkip: allMonths.length > 24 }, grid: { display: false } }
+      }
+    }
+  });
+
+  let totL=0,totM=0,totO=0,totB=0,totLiab=0;
+  rows.forEach(r=>{totL+=r.tL;totM+=r.tM;totO+=r.tO;totB+=r.tB;totLiab+=r.tLiab;});
+  const totC=totL+totM+totO;
+
+  let tbl = '<div class="card" style="padding:0;overflow:hidden;margin-top:1rem"><table><thead><tr><th>Month</th><th>Labour</th><th>Materials</th><th>Overhead</th><th>Job costs</th><th>Liabilities</th><th>Billing</th><th>Net cashflow</th></tr></thead><tbody>';
+  rows.forEach(r => {
+    const cur = getCurrentMonth();
+    const rowBg = r.m < cur ? 'background:#fafafa' : '';
+    tbl += `<tr style="${rowBg}"><td>${monthLabel(r.m)}</td><td>${fmt(r.tL)}</td><td>${fmt(r.tM)}</td><td>${fmt(r.tO)}</td><td><strong>${fmt(r.tC)}</strong></td><td class="red">${r.tLiab>0?fmt(r.tLiab):'<span style="color:#ccc">—</span>'}</td><td>${fmt(r.tB)}</td><td class="${r.cash>=0?'green':'red'}"><strong>${r.cash>=0?'+':''}${fmt(r.cash)}</strong></td></tr>`;
+  });
+  tbl += `<tr style="background:#f0f0f0;font-weight:600"><td>Total</td><td>${fmt(totL)}</td><td>${fmt(totM)}</td><td>${fmt(totO)}</td><td>${fmt(totC)}</td><td class="red">${fmt(totLiab)}</td><td>${fmt(totB)}</td><td class="${totB-totC-totLiab>=0?'green':'red'}">${totB-totC-totLiab>=0?'+':''}${fmt(totB-totC-totLiab)}</td></tr>`;
+  document.getElementById('ftable').innerHTML = tbl + '</tbody></table></div>';
+}
+
+function renderAll() {
+  renderMetrics(); renderJobsTable(); renderActualsSection(); renderLiabilitiesSection(); renderForecastSection();
+}
+
+function showTab(id) {
+  document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', ['jobs','actuals','liabilities','forecast'][i] === id));
+  document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === id));
+}
+
+function openAddJob() {
+  editIdx = null;
+  document.getElementById('modal-title').textContent = 'Add job';
+  ['f-name','f-client','f-labour','f-materials','f-overhead','f-contract'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-dur').value = 3; document.getElementById('f-retention').value = 5; document.getElementById('f-status').value = 'active';
+  const now = new Date(); document.getElementById('f-start').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  document.getElementById('modal-backdrop').classList.add('open');
+}
+
+function editJob(idx) {
+  editIdx = idx; const j = jobs[idx];
+  document.getElementById('modal-title').textContent = 'Edit job';
+  document.getElementById('f-name').value = j.name; document.getElementById('f-client').value = j.client;
+  document.getElementById('f-start').value = j.start; document.getElementById('f-dur').value = j.dur;
+  document.getElementById('f-contract').value = j.contract; document.getElementById('f-labour').value = j.labour;
+  document.getElementById('f-materials').value = j.materials; document.getElementById('f-overhead').value = j.overhead;
+  document.getElementById('f-retention').value = j.retention; document.getElementById('f-status').value = j.status;
+  document.getElementById('modal-backdrop').classList.add('open');
+}
+
+function closeModal() { document.getElementById('modal-backdrop').classList.remove('open'); }
+
+async function saveJob() {
+  const name = document.getElementById('f-name').value.trim();
+  if (!name) { alert('Please enter a job name.'); return; }
+  const job = {
+    id: editIdx !== null ? jobs[editIdx].id : undefined,
+    name, client: document.getElementById('f-client').value.trim(),
+    start: document.getElementById('f-start').value,
+    dur: parseInt(document.getElementById('f-dur').value) || 1,
+    contract: parseFloat(document.getElementById('f-contract').value) || 0,
+    labour: parseFloat(document.getElementById('f-labour').value) || 0,
+    materials: parseFloat(document.getElementById('f-materials').value) || 0,
+    overhead: parseFloat(document.getElementById('f-overhead').value) || 0,
+    retention: parseFloat(document.getElementById('f-retention').value) || 0,
+    status: document.getElementById('f-status').value,
+    actuals: editIdx !== null ? jobs[editIdx].actuals : {}
+  };
+  if (editIdx !== null) jobs[editIdx] = job; else jobs.push(job);
+  closeModal(); renderAll();
+  await dbSave(job);
+  renderAll();
+}
+
+async function deleteJob(idx) {
+  if (!confirm('Delete this job?')) return;
+  const id = jobs[idx].id; jobs.splice(idx, 1);
+  if (activeActualsJob >= jobs.length) activeActualsJob = Math.max(0, jobs.length - 1);
+  renderAll(); await dbDelete(id);
+}
+
+// Start
+initForecastControls();
+renderAll();
+loadJobs();
+</script>
+</body>
+</html>

@@ -254,7 +254,7 @@
     </div>
     <div class="sub-label">Retention</div>
     <div class="form-grid">
-      <div><label>Retention % held by client</label><input type="number" id="f-retention" value="5" min="0" max="100"></div>
+      <div><label>Retention % held by client</label><input type="number" id="f-retention" value="5" min="0" max="100" oninput="updateRetentionCalc()"></div>
       <div><label>Defects period</label>
         <select id="f-moiety">
           <option value="12">12 months</option>
@@ -264,6 +264,29 @@
       <div></div>
     </div>
     <div style="font-size:12px;color:#888;margin-bottom:1rem;margin-top:-6px">First 50% released on job completion. Balance released at end of defects period.</div>
+
+    <!-- Existing contract toggle -->
+    <div style="border-top:0.5px solid #e8e8e8;padding-top:1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:10px">
+      <input type="checkbox" id="f-existing" style="width:auto;cursor:pointer" onchange="toggleExistingFields()">
+      <label for="f-existing" style="font-size:13px;font-weight:500;color:#1a1a1a;cursor:pointer;margin:0">This is an existing contract (mid-contract)</label>
+    </div>
+    <div id="f-existing-fields" style="display:none">
+      <div style="background:#fef9c3;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:12px;color:#a16207">
+        Enter totals spent and billed <strong>to date</strong>. These will be recorded as actuals against the most recent completed month so the forecast only covers remaining spend and income.
+      </div>
+      <div class="sub-label">Costs to date (£ spent so far)</div>
+      <div class="form-grid">
+        <div><label>Labour to date</label><input type="number" id="f-labour-to-date" placeholder="0"></div>
+        <div><label>Materials to date</label><input type="number" id="f-materials-to-date" placeholder="0"></div>
+        <div><label>Overhead to date</label><input type="number" id="f-overhead-to-date" placeholder="0"></div>
+      </div>
+      <div class="sub-label">Billing to date (£ invoiced so far)</div>
+      <div class="form-grid">
+        <div><label>Billed to date (gross)</label><input type="number" id="f-billed-to-date" placeholder="0" oninput="updateRetentionCalc()"></div>
+        <div style="padding-top:1.5rem;font-size:12px;color:#888" id="f-retention-calc">Retention held will be calculated automatically</div>
+        <div></div>
+      </div>
+    </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="saveJob()">Save job</button>
@@ -1470,12 +1493,30 @@ function showTab(id) {
   document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === id));
 }
 
+function toggleExistingFields() {
+  const show = document.getElementById('f-existing').checked;
+  document.getElementById('f-existing-fields').style.display = show ? 'block' : 'none';
+}
+
+function updateRetentionCalc() {
+  const billed = parseFloat(document.getElementById('f-billed-to-date').value) || 0;
+  const retPct = parseFloat(document.getElementById('f-retention').value) || 0;
+  const held = billed * retPct / 100;
+  document.getElementById('f-retention-calc').textContent = held > 0
+    ? `Retention held: £${Math.round(held).toLocaleString('en-GB')} (${retPct}% of ${fmt(billed)})`
+    : 'Retention held will be calculated automatically';
+}
+
 function openAddJob() {
   editIdx = null;
   document.getElementById('modal-title').textContent = 'Add job';
-  ['f-name','f-client','f-labour','f-materials','f-overhead','f-contract'].forEach(id => document.getElementById(id).value = '');
+  ['f-name','f-client','f-labour','f-materials','f-overhead','f-contract',
+   'f-labour-to-date','f-materials-to-date','f-overhead-to-date','f-billed-to-date'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-dur').value = 3; document.getElementById('f-retention').value = 5;
   document.getElementById('f-status').value = 'active'; document.getElementById('f-moiety').value = '12';
+  document.getElementById('f-existing').checked = false;
+  document.getElementById('f-existing-fields').style.display = 'none';
+  document.getElementById('f-retention-calc').textContent = 'Retention held will be calculated automatically';
   const now = new Date(); document.getElementById('f-start').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   document.getElementById('modal-backdrop').classList.add('open');
 }
@@ -1489,6 +1530,9 @@ function editJob(idx) {
   document.getElementById('f-materials').value = j.materials; document.getElementById('f-overhead').value = j.overhead;
   document.getElementById('f-retention').value = j.retention; document.getElementById('f-status').value = j.status;
   document.getElementById('f-moiety').value = String(j.moiety || 12);
+  // Hide existing contract section when editing — actuals are managed in the Actuals tab
+  document.getElementById('f-existing').checked = false;
+  document.getElementById('f-existing-fields').style.display = 'none';
   document.getElementById('modal-backdrop').classList.add('open');
 }
 
@@ -1497,22 +1541,63 @@ function closeModal() { document.getElementById('modal-backdrop').classList.remo
 async function saveJob() {
   const name = document.getElementById('f-name').value.trim();
   if (!name) { alert('Please enter a job name.'); return; }
+
+  const isExisting = document.getElementById('f-existing').checked;
+  const startVal = document.getElementById('f-start').value;
+  const durVal = parseInt(document.getElementById('f-dur').value) || 1;
+  const retPct = parseFloat(document.getElementById('f-retention').value) || 0;
+
+  // Build actuals — preserve existing if editing, otherwise start fresh
+  let actuals = editIdx !== null ? jobs[editIdx].actuals : {};
+
+  if (isExisting && editIdx === null) {
+    // Find the most recently completed month within the job's elapsed months
+    const cur = getCurrentMonth();
+    const allJobMonths = getMonths(startVal, durVal);
+    const elapsedMonths = allJobMonths.filter(m => m < cur);
+
+    if (elapsedMonths.length > 0) {
+      const lastMonth = elapsedMonths[elapsedMonths.length - 1];
+      const labToDate   = parseFloat(document.getElementById('f-labour-to-date').value)    || 0;
+      const matToDate   = parseFloat(document.getElementById('f-materials-to-date').value) || 0;
+      const ovhToDate   = parseFloat(document.getElementById('f-overhead-to-date').value)  || 0;
+      const bilToDate   = parseFloat(document.getElementById('f-billed-to-date').value)    || 0;
+      // Net billing = gross billed less retention
+      const netBilToDate = bilToDate * (1 - retPct / 100);
+
+      // Write all historical spend/billing as a single actual on the last elapsed month
+      // Previous elapsed months get zero actuals so reforecast sees them as fully spent
+      elapsedMonths.forEach(m => {
+        if (!actuals[m]) actuals[m] = {};
+        actuals[m].labour    = 0;
+        actuals[m].materials = 0;
+        actuals[m].overhead  = 0;
+        actuals[m].billing   = 0;
+      });
+      // Put the lump sums on the last elapsed month
+      actuals[lastMonth].labour    = labToDate;
+      actuals[lastMonth].materials = matToDate;
+      actuals[lastMonth].overhead  = ovhToDate;
+      actuals[lastMonth].billing   = netBilToDate;
+    }
+  }
+
   const job = {
     id: editIdx !== null ? jobs[editIdx].id : undefined,
     name, client: document.getElementById('f-client').value.trim(),
-    start: document.getElementById('f-start').value,
-    dur: parseInt(document.getElementById('f-dur').value) || 1,
+    start: startVal,
+    dur: durVal,
     contract: parseFloat(document.getElementById('f-contract').value) || 0,
     labour: parseFloat(document.getElementById('f-labour').value) || 0,
     materials: parseFloat(document.getElementById('f-materials').value) || 0,
     overhead: parseFloat(document.getElementById('f-overhead').value) || 0,
-    retention: parseFloat(document.getElementById('f-retention').value) || 0,
+    retention: retPct,
     moiety: parseInt(document.getElementById('f-moiety').value) || 12,
     status: document.getElementById('f-status').value,
     retentionReleases: editIdx !== null ? (jobs[editIdx].retentionReleases || { m1: false, m2: false }) : { m1: false, m2: false },
     retentionReceivedDates: editIdx !== null ? (jobs[editIdx].retentionReceivedDates || {}) : {},
     retentionInvoiceDates: editIdx !== null ? (jobs[editIdx].retentionInvoiceDates || {}) : {},
-    actuals: editIdx !== null ? jobs[editIdx].actuals : {}
+    actuals
   };
   if (editIdx !== null) jobs[editIdx] = job; else jobs.push(job);
   closeModal(); renderAll();

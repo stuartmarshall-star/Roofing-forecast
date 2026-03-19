@@ -292,17 +292,20 @@
     </div>
     <div id="f-existing-fields" style="display:none">
       <div style="background:#fef9c3;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:12px;color:#a16207">
-        Enter totals spent and billed <strong>to date</strong>. These will be recorded as actuals against the most recent completed month so the forecast only covers remaining spend and income.
+        Enter cash actually <strong>paid or received</strong> — not invoiced amounts.<br>
+        <strong>Labour &amp; overhead:</strong> total cash paid to date.&nbsp;
+        <strong>Materials:</strong> total paid to end of last full month (excludes this month's bill not yet due).&nbsp;
+        <strong>Billing:</strong> cash actually received in your bank (excludes invoices sent but not yet paid).
       </div>
-      <div class="sub-label">Costs to date (£ spent so far)</div>
+      <div class="sub-label">Costs paid to date (£ cash out)</div>
       <div class="form-grid">
-        <div><label>Labour to date</label><input type="number" id="f-labour-to-date" placeholder="0"></div>
-        <div><label>Materials to date</label><input type="number" id="f-materials-to-date" placeholder="0"></div>
-        <div><label>Overhead to date</label><input type="number" id="f-overhead-to-date" placeholder="0"></div>
+        <div><label>Labour paid to date</label><input type="number" id="f-labour-to-date" placeholder="0"></div>
+        <div><label>Materials paid to date</label><input type="number" id="f-materials-to-date" placeholder="0"></div>
+        <div><label>Overhead paid to date</label><input type="number" id="f-overhead-to-date" placeholder="0"></div>
       </div>
-      <div class="sub-label">Billing to date (£ invoiced so far)</div>
+      <div class="sub-label">Billing received to date (£ cash in)</div>
       <div class="form-grid">
-        <div><label>Billed to date (gross)</label><input type="number" id="f-billed-to-date" placeholder="0" oninput="updateRetentionCalc()"></div>
+        <div><label>Cash received to date (gross)</label><input type="number" id="f-billed-to-date" placeholder="0" oninput="updateRetentionCalc()"></div>
         <div style="padding-top:1.5rem;font-size:12px;color:#888" id="f-retention-calc">Retention held will be calculated automatically</div>
         <div></div>
       </div>

@@ -283,10 +283,12 @@
     </div>
     <div style="font-size:12px;color:#888;margin-bottom:1rem;margin-top:-6px">First 50% released on job completion. Balance released at end of defects period.</div>
 
+    <div id="f-actuals-summary" style="display:none;margin-bottom:1rem"></div>
+
     <!-- Existing contract toggle -->
     <div style="border-top:0.5px solid #e8e8e8;padding-top:1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:10px">
       <input type="checkbox" id="f-existing" style="width:auto;cursor:pointer" onchange="toggleExistingFields()">
-      <label for="f-existing" style="font-size:13px;font-weight:500;color:#1a1a1a;cursor:pointer;margin:0">This is an existing contract (mid-contract)</label>
+      <label for="f-existing" style="font-size:13px;font-weight:500;color:#1a1a1a;cursor:pointer;margin:0">Enter / update costs and billing to date</label>
     </div>
     <div id="f-existing-fields" style="display:none">
       <div style="background:#fef9c3;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:12px;color:#a16207">
@@ -1765,6 +1767,7 @@ function openAddJob() {
   document.getElementById('f-payment-terms').value = '1';
   document.getElementById('f-existing').checked = false;
   document.getElementById('f-existing-fields').style.display = 'none';
+  document.getElementById('f-actuals-summary').style.display = 'none';
   document.getElementById('f-retention-calc').textContent = 'Retention held will be calculated automatically';
   const now = new Date(); document.getElementById('f-start').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   document.getElementById('modal-backdrop').classList.add('open');
@@ -1780,9 +1783,48 @@ function editJob(idx) {
   document.getElementById('f-retention').value = j.retention; document.getElementById('f-status').value = j.status;
   document.getElementById('f-moiety').value = String(j.moiety || 12);
   document.getElementById('f-payment-terms').value = String(j.paymentTerms || 1);
-  // Hide existing contract section when editing — actuals are managed in the Actuals tab
-  document.getElementById('f-existing').checked = false;
-  document.getElementById('f-existing-fields').style.display = 'none';
+
+  // Calculate current actuals totals from backfilled data
+  const months = getMonths(j.start, j.dur);
+  const cur = getCurrentMonth();
+  const elapsedMonths = months.filter(m => m < cur);
+  let totL=0, totM=0, totO=0, totNetB=0, hasActuals=false;
+  elapsedMonths.forEach(m => {
+    const a = j.actuals[m];
+    if (a) {
+      totL  += a.labour    || 0;
+      totM  += a.materials || 0;
+      totO  += a.overhead  || 0;
+      totNetB += a.billing || 0;
+      if (Object.keys(a).length > 0) hasActuals = true;
+    }
+  });
+  const totGrossB = j.retention < 100 ? totNetB / (1 - j.retention / 100) : totNetB;
+
+  // Always show existing contract section when editing so history can be updated
+  document.getElementById('f-existing').checked = true;
+  document.getElementById('f-existing-fields').style.display = 'block';
+  document.getElementById('f-labour-to-date').value   = hasActuals ? Math.round(totL)  : '';
+  document.getElementById('f-materials-to-date').value = hasActuals ? Math.round(totM)  : '';
+  document.getElementById('f-overhead-to-date').value  = hasActuals ? Math.round(totO)  : '';
+  document.getElementById('f-billed-to-date').value    = hasActuals ? Math.round(totGrossB) : '';
+  updateRetentionCalc();
+
+  // Show actuals summary
+  const summaryEl = document.getElementById('f-actuals-summary');
+  if (hasActuals) {
+    summaryEl.style.display = 'block';
+    summaryEl.innerHTML = `
+      <div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:8px;padding:10px 14px;font-size:12px;color:#1d4ed8">
+        <strong>Editing historical figures</strong> — the fields below show your current recorded totals.
+        Update any figure and save to recalculate the actuals across all elapsed months.
+        Future months will reforecast automatically from the new remaining budget.
+      </div>`;
+  } else {
+    summaryEl.style.display = 'none';
+  }
+
+  document.getElementById('f-retention-calc').textContent = 'Retention held will be calculated automatically';
   document.getElementById('modal-backdrop').classList.add('open');
 }
 
@@ -1797,14 +1839,14 @@ async function saveJob() {
   const durVal = parseInt(document.getElementById('f-dur').value) || 1;
   const retPct = parseFloat(document.getElementById('f-retention').value) || 0;
 
-  // Build actuals — preserve existing if editing, otherwise start fresh
-  let actuals = editIdx !== null ? jobs[editIdx].actuals : {};
+  // Build actuals — start from existing if editing, fresh if new
+  let actuals = editIdx !== null ? { ...jobs[editIdx].actuals } : {};
 
-  if (isExisting && editIdx === null) {
+  if (isExisting) {
     const cur = getCurrentMonth();
     const allJobMonths = getMonths(startVal, durVal);
-    // Include current month in elapsed if it's within the job
-    const elapsedMonths = allJobMonths.filter(m => m <= cur);
+    // Only include months strictly before current month — current month is not yet complete
+    const elapsedMonths = allJobMonths.filter(m => m < cur);
 
     if (elapsedMonths.length > 0) {
       const n = elapsedMonths.length;
@@ -1812,11 +1854,9 @@ async function saveJob() {
       const matToDate = parseFloat(document.getElementById('f-materials-to-date').value) || 0;
       const ovhToDate = parseFloat(document.getElementById('f-overhead-to-date').value)  || 0;
       const bilToDate = parseFloat(document.getElementById('f-billed-to-date').value)    || 0;
-      // Net billing = gross billed less retention
       const netBilToDate = bilToDate * (1 - retPct / 100);
 
-      // Spread lump sums evenly across elapsed months so reforecast engine
-      // sees a realistic per-month history and correctly calculates remaining budget
+      // Spread evenly across elapsed months, overwriting previous backfill
       const labPM = labToDate / n;
       const matPM = matToDate / n;
       const ovhPM = ovhToDate / n;

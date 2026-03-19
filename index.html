@@ -161,7 +161,7 @@
 
   <!-- Opening balance strip — always visible -->
   <div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:.75rem 1.25rem;margin-bottom:1rem;flex-wrap:wrap">
-    <div style="font-size:13px;font-weight:500;color:#1a1a1a;white-space:nowrap">Opening balance</div>
+    <div style="font-size:13px;font-weight:500;color:#1a1a1a;white-space:nowrap">Closing balance</div>
     <div style="display:flex;align-items:center;gap:6px">
       <span style="font-size:13px;color:#555">£</span>
       <input type="number" id="fc-opening-balance" style="width:130px;font-size:13px;padding:5px 8px"
@@ -169,7 +169,7 @@
       <button class="btn btn-primary btn-sm" onclick="saveOpeningBalance()">Save</button>
     </div>
     <div style="font-size:12px;color:#888" id="ob-month-label"></div>
-    <div style="font-size:12px;color:#aaa;margin-left:auto">Enter your current bank balance — the cumulative forecast column runs from this figure</div>
+    <div style="font-size:12px;color:#aaa;margin-left:auto">Bank balance at end of previous month after costs paid, before income received</div>
   </div>
 
   <div class="tabs">
@@ -265,16 +265,21 @@
       <div><label>Materials</label><input type="number" id="f-materials" placeholder="0"></div>
       <div><label>Overhead / Other</label><input type="number" id="f-overhead" placeholder="0"></div>
     </div>
-    <div class="sub-label">Retention</div>
+    <div class="sub-label">Billing &amp; payment</div>
     <div class="form-grid">
       <div><label>Retention % held by client</label><input type="number" id="f-retention" value="5" min="0" max="100" oninput="updateRetentionCalc()"></div>
+      <div><label>Payment terms</label>
+        <select id="f-payment-terms">
+          <option value="1">30 days following month</option>
+          <option value="2">45 days following month</option>
+        </select>
+      </div>
       <div><label>Defects period</label>
         <select id="f-moiety">
           <option value="12">12 months</option>
           <option value="24">24 months</option>
         </select>
       </div>
-      <div></div>
     </div>
     <div style="font-size:12px;color:#888;margin-bottom:1rem;margin-top:-6px">First 50% released on job completion. Balance released at end of defects period.</div>
 
@@ -344,6 +349,7 @@ const CORRECT_PIN = '1976';
   alter table jobs add column if not exists retention_releases jsonb default '{"m1":false,"m2":false}';
   alter table jobs add column if not exists retention_received_dates jsonb default '{}';
   alter table jobs add column if not exists retention_invoice_dates jsonb default '{}';
+  alter table jobs add column if not exists payment_terms integer default 1;
 */
 
 let pinEntry = '';
@@ -407,6 +413,7 @@ let fcStartMonth = '';
 let fcLength = 12;
 let openingBalance = 0;
 let openingBalanceMonth = '';
+let balanceHistory = {}; // { 'YYYY-MM': amount } — actual closing balances per month
 
 // ── Supabase helpers ─────────────────────────────────────────────────────────
 function sbHeaders() {
@@ -433,6 +440,7 @@ function dbToJob(row) {
     materials: parseFloat(row.materials) || 0, overhead: parseFloat(row.overhead) || 0,
     retention: parseFloat(row.retention) || 0,
     moiety: parseInt(row.moiety) || 12,
+    paymentTerms: parseInt(row.payment_terms) || 1,
     retentionReleases: row.retention_releases || { m1: false, m2: false },
     retentionReceivedDates: row.retention_received_dates || {},
     retentionInvoiceDates: row.retention_invoice_dates || {},
@@ -446,6 +454,7 @@ function jobToDb(j) {
     duration: j.dur, contract: j.contract, labour: j.labour,
     materials: j.materials, overhead: j.overhead, retention: j.retention,
     moiety: j.moiety || 12,
+    payment_terms: j.paymentTerms || 1,
     retention_releases: j.retentionReleases || { m1: false, m2: false },
     retention_received_dates: j.retentionReceivedDates || {},
     retention_invoice_dates: j.retentionInvoiceDates || {},
@@ -473,20 +482,27 @@ async function loadJobs() {
     ]);
     jobs = jobData.map(dbToJob);
     liabilities = liabData.map(dbToLiab);
-    // Load opening balance from settings
-    const obSetting = settingsData.find(s => s.key === 'opening_balance');
-    if (obSetting) {
-      openingBalance = parseFloat(obSetting.value) || 0;
-      openingBalanceMonth = obSetting.month || getCurrentMonth();
-    } else {
-      openingBalance = 0;
-      openingBalanceMonth = getCurrentMonth();
+
+    // Load balance history
+    const bhSetting = settingsData.find(s => s.key === 'balance_history');
+    if (bhSetting) {
+      try { balanceHistory = JSON.parse(bhSetting.value) || {}; } catch(e) { balanceHistory = {}; }
     }
+    // Load most recent balance as the opening balance for display
+    const months = Object.keys(balanceHistory).sort();
+    if (months.length > 0) {
+      const lastMonth = months[months.length - 1];
+      openingBalance = balanceHistory[lastMonth];
+      openingBalanceMonth = lastMonth;
+    }
+
     isConnected = true;
     setStatus('connected', 'Connected — all changes save automatically and sync live with your accountant');
     setupRealtime();
     initForecastControls();
     renderAll();
+    // Check if we should prompt for last month's closing balance
+    checkMonthlyBalancePrompt();
   } catch(e) {
     isConnected = false;
     setStatus('error', 'Could not connect: ' + e.message);
@@ -494,29 +510,84 @@ async function loadJobs() {
   }
 }
 
-async function saveOpeningBalance() {
-  const val = parseFloat(document.getElementById('fc-opening-balance').value) || 0;
+function checkMonthlyBalancePrompt() {
+  const cur = getCurrentMonth();
+  const prevM = prevMonth(cur);
+  // Only prompt if we haven't recorded last month's balance yet
+  if (balanceHistory[prevM] !== undefined) return;
+  // Don't prompt if no jobs yet
+  if (!jobs.length) return;
+  // Show prompt after a short delay so the app loads first
+  setTimeout(() => showBalancePrompt(prevM), 800);
+}
+
+function showBalancePrompt(month) {
+  const existing = document.getElementById('balance-prompt');
+  if (existing) return; // already showing
+  const div = document.createElement('div');
+  div.id = 'balance-prompt';
+  div.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:1.25rem 1.5rem;box-shadow:0 4px 20px rgba(0,0,0,.12);z-index:200;width:min(360px,90vw)';
+  div.innerHTML = `
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">Record closing balance</div>
+    <div style="font-size:13px;color:#666;margin-bottom:12px">What was your bank balance at the end of <strong>${monthLabel(month)}</strong>, after costs were paid but before any income arrived?</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+      <span style="font-size:13px;color:#555">£</span>
+      <input type="number" id="prompt-balance-input" placeholder="0"
+        style="flex:1;font-size:13px;padding:7px 10px;border:1px solid #ddd;border-radius:6px">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="dismissBalancePrompt()" style="padding:6px 14px;font-size:13px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer">Later</button>
+      <button onclick="confirmBalancePrompt('${month}')" style="padding:6px 14px;font-size:13px;border:1px solid #1a1a1a;border-radius:6px;background:#1a1a1a;color:#fff;cursor:pointer">Save balance</button>
+    </div>`;
+  document.body.appendChild(div);
+}
+
+function dismissBalancePrompt() {
+  const el = document.getElementById('balance-prompt');
+  if (el) el.remove();
+}
+
+async function confirmBalancePrompt(month) {
+  const val = parseFloat(document.getElementById('prompt-balance-input').value);
+  if (isNaN(val)) { alert('Please enter a valid balance.'); return; }
+  balanceHistory[month] = val;
   openingBalance = val;
-  openingBalanceMonth = getCurrentMonth();
-  // Update label
-  const lbl = document.getElementById('ob-month-label');
-  if (lbl) lbl.textContent = 'As at ' + monthLabel(openingBalanceMonth);
+  openingBalanceMonth = month;
+  dismissBalancePrompt();
+  updateObDisplay();
   renderForecastSection();
+  await saveBalanceHistory();
+}
+
+function updateObDisplay() {
+  const obEl = document.getElementById('fc-opening-balance');
+  if (obEl) obEl.value = openingBalance || '';
+  const lbl = document.getElementById('ob-month-label');
+  if (lbl && openingBalanceMonth) lbl.textContent = 'Closing balance ' + monthLabel(openingBalanceMonth);
+}
+
+async function saveOpeningBalance() {
+  const val = parseFloat(document.getElementById('fc-opening-balance').value);
+  if (isNaN(val)) return;
+  const month = prevMonth(getCurrentMonth()); // closing balance is end of previous month
+  balanceHistory[month] = val;
+  openingBalance = val;
+  openingBalanceMonth = month;
+  updateObDisplay();
+  renderForecastSection();
+  await saveBalanceHistory();
+}
+
+async function saveBalanceHistory() {
   if (!isConnected) return;
   setSaving('Saving...');
   try {
-    // Upsert — check if setting exists first
-    const existing = await sbFetch('settings?key=eq.opening_balance').catch(() => []);
+    const existing = await sbFetch('settings?key=eq.balance_history').catch(() => []);
+    const payload = { key: 'balance_history', value: JSON.stringify(balanceHistory), month: openingBalanceMonth };
     if (existing && existing.length > 0) {
-      await sbFetch('settings?key=eq.opening_balance', {
-        method: 'PATCH',
-        body: JSON.stringify({ value: String(val), month: openingBalanceMonth })
-      });
+      await sbFetch('settings?key=eq.balance_history', { method: 'PATCH', body: JSON.stringify(payload) });
     } else {
-      await sbFetch('settings', {
-        method: 'POST',
-        body: JSON.stringify({ key: 'opening_balance', value: String(val), month: openingBalanceMonth })
-      });
+      await sbFetch('settings', { method: 'POST', body: JSON.stringify(payload) });
     }
     setSaving('Saved ✓'); setTimeout(() => setSaving(''), 2000);
   } catch(e) { setSaving('Save failed'); }
@@ -731,11 +802,13 @@ function getRetentionReceivedForMonth(month) {
 function getJobBillingForMonth(j, month) {
   const ms = getMonths(j.start, j.dur);
   if (!ms.includes(month)) return { gross: 0, ret: 0 };
-  const grossPerMonth = j.contract / j.dur;
-  const retPerMonth = grossPerMonth * (j.retention / 100);
-  const netBilling = buildSchedule(j,'billing')[month].value;
-  const gross = netBilling + retPerMonth;
-  return { gross, ret: retPerMonth };
+  // Get the net billing value for this month from the reforecast schedule
+  const netBilling = buildSchedule(j, 'billing')[month].value;
+  // Gross = net / (1 - retention%) so retention is consistent with the reforecast net
+  const retRate = j.retention / 100;
+  const gross = retRate < 1 ? netBilling / (1 - retRate) : netBilling;
+  const ret = gross - netBilling;
+  return { gross, ret };
 }
 
 function toggleDetail(detailId, btnId) {
@@ -1130,11 +1203,7 @@ function initForecastControls() {
   if (startEl) startEl.value = start;
   const lenEl = document.getElementById('fc-length');
   if (lenEl) lenEl.value = 'all';
-  // Populate opening balance
-  const obEl = document.getElementById('fc-opening-balance');
-  if (obEl) obEl.value = openingBalance || '';
-  const lbl = document.getElementById('ob-month-label');
-  if (lbl && openingBalanceMonth) lbl.textContent = 'As at ' + monthLabel(openingBalanceMonth);
+  updateObDisplay();
 }
 
 function onFcLengthChange() {
@@ -1149,16 +1218,17 @@ function resetForecastControls() {
 }
 
 function getForecastMonths() {
-  // Build the list of months to show based on controls
   if (fcLength === 'all') {
-    // Span from earliest job start to latest job end across all jobs
     if (!jobs.length) return [];
     let earliest = null, latest = null;
     jobs.forEach(j => {
       const ms = getMonths(j.start, j.dur);
       if (!earliest || ms[0] < earliest) earliest = ms[0];
-      const last = ms[ms.length - 1];
-      if (!latest || last > latest) latest = last;
+      // Extend latest by max payment terms so final billing month is captured
+      const maxLag = j.paymentTerms || 1;
+      const lastJobMonth = ms[ms.length - 1];
+      const extendedEnd = addMonths(lastJobMonth, maxLag);
+      if (!latest || extendedEnd > latest) latest = extendedEnd;
     });
     const months = [];
     let [y, m] = earliest.split('-').map(Number);
@@ -1169,7 +1239,6 @@ function getForecastMonths() {
     }
     return months;
   }
-  // Fixed length from chosen start
   const start = fcStartMonth || getCurrentMonth();
   const [sy, sm] = start.split('-').map(Number);
   const months = [];
@@ -1222,24 +1291,26 @@ function renderForecastSection() {
   if (rangeEl) rangeEl.textContent = monthLabel(allMonths[0]) + ' – ' + monthLabel(allMonths[allMonths.length - 1]) + ' (' + allMonths.length + ' months)';
 
   const rows = allMonths.map(m => {
-    const mPrev = prevMonth(m); // previous month — for lagged materials and billing
+    const mPrev  = prevMonth(m);          // 1 month back — materials, 30-day billing
+    const mPrev2 = prevMonth(mPrev);      // 2 months back — 45-day billing
 
     let tL=0, tM=0, tO=0, tGrossBilling=0, tRetHeld=0;
     jobs.forEach(j => {
       const ms = getMonths(j.start, j.dur);
-      // Labour — paid in the month it occurs
+      // Labour + overhead — paid in month incurred
       if (ms.includes(m)) {
         tL += buildSchedule(j,'labour')[m].value;
         tO += buildSchedule(j,'overhead')[m].value;
       }
-      // Materials — paid following month (30 day account)
-      // So this month's materials cash out = last month's materials cost
+      // Materials — 30-day account, paid following month
       if (ms.includes(mPrev)) {
         tM += buildSchedule(j,'materials')[mPrev].value;
       }
-      // Billing — received end of following month (30 day payment terms)
-      // So this month's cash in = last month's gross billing
-      const prevBilling = getJobBillingForMonth(j, mPrev);
+      // Billing — received based on payment terms per job
+      // 30 days (terms=1): income from previous month's billing
+      // 45 days (terms=2): income from 2 months ago billing
+      const billingMonth = j.paymentTerms === 2 ? mPrev2 : mPrev;
+      const prevBilling = getJobBillingForMonth(j, billingMonth);
       tGrossBilling += prevBilling.gross;
       tRetHeld += prevBilling.ret;
     });
@@ -1248,15 +1319,31 @@ function renderForecastSection() {
     const tLiab = getTotalLiabilitiesForMonth(m);
     const tRetReceived = getRetentionReceivedForMonth(m);
     const tNetBilling = tGrossBilling - tRetHeld;
-    // Operating cashflow = net billing received + retention received - costs - liabilities
     const cash = tNetBilling + tRetReceived - tC - tLiab;
     return {m, tL, tM, tO, tC, tGrossBilling, tRetHeld, tNetBilling, tLiab, tRetReceived, cash};
   });
 
-  // Add cumulative cash — starts from opening balance
-  const ob = parseFloat(document.getElementById('fc-opening-balance')?.value) || openingBalance || 0;
-  let cumulative = ob;
-  rows.forEach(r => { cumulative += r.cash; r.cumCash = cumulative; });
+  // Build cumulative — use actual balance history where recorded, forecast otherwise
+  // Find the most recent recorded balance at or before the start of the forecast
+  const sortedBalMonths = Object.keys(balanceHistory).sort();
+  // Find anchor: last recorded month on or before first forecast month
+  let anchorBalance = parseFloat(document.getElementById('fc-opening-balance')?.value) || openingBalance || 0;
+  let anchorMonth = null;
+  sortedBalMonths.forEach(bm => { if (bm <= allMonths[0]) { anchorBalance = balanceHistory[bm]; anchorMonth = bm; } });
+
+  let cumulative = anchorBalance;
+  rows.forEach(r => {
+    // If we have an actual recorded balance for this month, use it as the anchor (overrides forecast)
+    if (balanceHistory[r.m] !== undefined) {
+      r.cumCash = balanceHistory[r.m];
+      r.cumIsActual = true;
+      cumulative = balanceHistory[r.m]; // reset running total from this actual
+    } else {
+      cumulative += r.cash;
+      r.cumCash = cumulative;
+      r.cumIsActual = false;
+    }
+  });
 
   if (forecastChartInst) { forecastChartInst.destroy(); forecastChartInst = null; }
 
@@ -1272,7 +1359,7 @@ function renderForecastSection() {
       <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:2px;background:rgba(202,138,4,0.75);display:inline-block"></span>Overhead</span>
       <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:2px;background:rgba(109,40,217,0.65);display:inline-block"></span>Liabilities</span>
       <span style="display:flex;align-items:center;gap:5px"><span style="width:24px;height:2px;background:#1d4ed8;display:inline-block"></span>Monthly cashflow</span>
-      <span style="display:flex;align-items:center;gap:5px"><span style="width:24px;height:2px;background:#7c3aed;border-top:2px dashed #7c3aed;display:inline-block"></span>Cumulative cash</span>
+      <span style="display:flex;align-items:center;gap:5px"><span style="width:24px;height:2px;background:#7c3aed;border-top:2px dashed #7c3aed;display:inline-block"></span>Closing balance</span>
     </div>
     <div style="font-size:12px;color:#888;margin-bottom:1rem">Labour and overhead paid in month incurred. Materials on 30-day account (paid following month). Income received end of following month. Retention deducted until marked received in the <button onclick="showTab('retentions')" style="background:none;border:none;color:#1d4ed8;cursor:pointer;font-size:12px;padding:0;text-decoration:underline">Retentions tab</button>.</div>
     <div style="position:relative;width:100%;height:${chartH}px;margin-bottom:1.5rem"><canvas id="forecastChart"></canvas></div>
@@ -1290,7 +1377,7 @@ function renderForecastSection() {
         { label: 'Overhead',           data: rows.map(r => Math.round(r.tO)),             backgroundColor: 'rgba(202,138,4,0.75)',  borderRadius: 3 },
         { label: 'Liabilities',        data: rows.map(r => Math.round(r.tLiab)),          backgroundColor: 'rgba(109,40,217,0.65)', borderRadius: 3 },
         { label: 'Operating cashflow', data: rows.map(r => Math.round(r.cash)),   type: 'line', borderColor: '#1d4ed8', backgroundColor: 'transparent', borderWidth: 2, pointRadius: allMonths.length > 18 ? 2 : 3, tension: 0.3, order: 0 },
-        { label: 'Cumulative cash',    data: rows.map(r => Math.round(r.cumCash)), type: 'line', borderColor: '#7c3aed', backgroundColor: 'transparent', borderWidth: 2, borderDash: [5,3], pointRadius: allMonths.length > 18 ? 2 : 3, tension: 0.3, order: 0 }
+        { label: 'Closing balance',  data: rows.map(r => Math.round(r.cumCash)), type: 'line', borderColor: '#7c3aed', backgroundColor: 'transparent', borderWidth: 2, borderDash: [5,3], pointRadius: allMonths.length > 18 ? 2 : 3, tension: 0.3, order: 0 }
       ]
     },
     options: {
@@ -1310,8 +1397,8 @@ function renderForecastSection() {
   const totCash=totNet+totRetRec-totC-totLiab;
 
   let tbl = `<div style="font-size:11px;color:#888;margin-bottom:.5rem">
-    Costs = labour (this month) + materials (prev month) + overhead + liabilities.
-    Billing = previous month net of retention.
+    Total costs = L (labour, this month) + M (materials, prev month) + O (overhead) + Liab (liabilities).
+    Billing = previous month net of retention. Payment terms per job.
   </div>
   <div class="card" style="padding:0;overflow:hidden;margin-top:.25rem">
   <table style="font-size:13px">
@@ -1321,7 +1408,7 @@ function renderForecastSection() {
     <th>Net billing</th>
     <th>Ret. received</th>
     <th>Monthly cash</th>
-    <th style="border-left:2px solid #e8e8e8">Cumulative</th>
+    <th style="border-left:2px solid #e8e8e8">Closing balance</th>
   </tr></thead><tbody>`;
 
   rows.forEach((r, ri) => {
@@ -1329,6 +1416,9 @@ function renderForecastSection() {
     const rowBg = r.m < cur ? 'background:#fafafa' : '';
     const retRecCell = r.tRetReceived > 0 ? `<span style="color:#0f766e;font-weight:600">+${fmt(r.tRetReceived)}</span>` : '<span style="color:#ccc">—</span>';
     const cumClass = r.cumCash >= 0 ? 'green' : 'red';
+    const cumStyle = r.cumIsActual
+      ? `font-weight:700;border-left:2px solid #e8e8e8;background:#dcfce7;color:#15803d`
+      : `font-weight:600;border-left:2px solid #e8e8e8`;
     const mPrev = prevMonth(r.m);
 
     // Build per-job detail for this month
@@ -1371,7 +1461,7 @@ function renderForecastSection() {
       </td>
       <td>
         <strong>${fmt(r.tC + r.tLiab)}</strong>
-        <div style="font-size:11px;color:#888">L:${fmt(r.tL)} M:${fmt(r.tM)} O:${fmt(r.tO)}${r.tLiab>0?' Lb:'+fmt(r.tLiab):''}</div>
+        <div style="font-size:11px;color:#888">L:${fmt(r.tL)} M:${fmt(r.tM)} O:${fmt(r.tO)}${r.tLiab>0?' Liab:'+fmt(r.tLiab):''}</div>
       </td>
       <td>
         <strong>${fmt(r.tNetBilling)}</strong>
@@ -1379,7 +1469,7 @@ function renderForecastSection() {
       </td>
       <td>${retRecCell}</td>
       <td class="${r.cash>=0?'green':'red'}"><strong>${r.cash>=0?'+':''}${fmt(r.cash)}</strong></td>
-      <td class="${cumClass}" style="font-weight:600;border-left:2px solid #e8e8e8">${r.cumCash>=0?'+':''}${fmt(r.cumCash)}</td>
+      <td style="${cumStyle}" class="${r.cumIsActual?'':''+cumClass}">${r.cumCash>=0?'+':''}${fmt(r.cumCash)}${r.cumIsActual?'<div style="font-size:10px;font-weight:500;color:#15803d">actual</div>':''}</td>
     </tr>`;
 
     // Detail sub-row (hidden by default)
@@ -1430,7 +1520,7 @@ function renderForecastSection() {
 
   tbl += `<tr style="background:#f0f0f0;font-weight:600">
     <td>Total</td>
-    <td>${fmt(totC+totLiab)}<div style="font-size:11px;font-weight:400;color:#666">L:${fmt(totL)} M:${fmt(totM)} O:${fmt(totO)}${totLiab>0?' Lb:'+fmt(totLiab):''}</div></td>
+    <td>${fmt(totC+totLiab)}<div style="font-size:11px;font-weight:400;color:#666">L:${fmt(totL)} M:${fmt(totM)} O:${fmt(totO)}${totLiab>0?' Liab:'+fmt(totLiab):''}</div></td>
     <td>${fmt(totNet)}<div style="font-size:11px;font-weight:400;color:#666">Gross:${fmt(totGross)} Ret:-${fmt(totRetHeld)}</div></td>
     <td style="color:#0f766e">${totRetRec>0?'+'+fmt(totRetRec):'—'}</td>
     <td class="${totCash>=0?'green':'red'}">${totCash>=0?'+':''}${fmt(totCash)}</td>
@@ -1672,6 +1762,7 @@ function openAddJob() {
    'f-labour-to-date','f-materials-to-date','f-overhead-to-date','f-billed-to-date'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-dur').value = 3; document.getElementById('f-retention').value = 5;
   document.getElementById('f-status').value = 'active'; document.getElementById('f-moiety').value = '12';
+  document.getElementById('f-payment-terms').value = '1';
   document.getElementById('f-existing').checked = false;
   document.getElementById('f-existing-fields').style.display = 'none';
   document.getElementById('f-retention-calc').textContent = 'Retention held will be calculated automatically';
@@ -1688,6 +1779,7 @@ function editJob(idx) {
   document.getElementById('f-materials').value = j.materials; document.getElementById('f-overhead').value = j.overhead;
   document.getElementById('f-retention').value = j.retention; document.getElementById('f-status').value = j.status;
   document.getElementById('f-moiety').value = String(j.moiety || 12);
+  document.getElementById('f-payment-terms').value = String(j.paymentTerms || 1);
   // Hide existing contract section when editing — actuals are managed in the Actuals tab
   document.getElementById('f-existing').checked = false;
   document.getElementById('f-existing-fields').style.display = 'none';
@@ -1709,34 +1801,34 @@ async function saveJob() {
   let actuals = editIdx !== null ? jobs[editIdx].actuals : {};
 
   if (isExisting && editIdx === null) {
-    // Find the most recently completed month within the job's elapsed months
     const cur = getCurrentMonth();
     const allJobMonths = getMonths(startVal, durVal);
-    const elapsedMonths = allJobMonths.filter(m => m < cur);
+    // Include current month in elapsed if it's within the job
+    const elapsedMonths = allJobMonths.filter(m => m <= cur);
 
     if (elapsedMonths.length > 0) {
-      const lastMonth = elapsedMonths[elapsedMonths.length - 1];
-      const labToDate   = parseFloat(document.getElementById('f-labour-to-date').value)    || 0;
-      const matToDate   = parseFloat(document.getElementById('f-materials-to-date').value) || 0;
-      const ovhToDate   = parseFloat(document.getElementById('f-overhead-to-date').value)  || 0;
-      const bilToDate   = parseFloat(document.getElementById('f-billed-to-date').value)    || 0;
+      const n = elapsedMonths.length;
+      const labToDate = parseFloat(document.getElementById('f-labour-to-date').value)    || 0;
+      const matToDate = parseFloat(document.getElementById('f-materials-to-date').value) || 0;
+      const ovhToDate = parseFloat(document.getElementById('f-overhead-to-date').value)  || 0;
+      const bilToDate = parseFloat(document.getElementById('f-billed-to-date').value)    || 0;
       // Net billing = gross billed less retention
       const netBilToDate = bilToDate * (1 - retPct / 100);
 
-      // Write all historical spend/billing as a single actual on the last elapsed month
-      // Previous elapsed months get zero actuals so reforecast sees them as fully spent
+      // Spread lump sums evenly across elapsed months so reforecast engine
+      // sees a realistic per-month history and correctly calculates remaining budget
+      const labPM = labToDate / n;
+      const matPM = matToDate / n;
+      const ovhPM = ovhToDate / n;
+      const bilPM = netBilToDate / n;
+
       elapsedMonths.forEach(m => {
         if (!actuals[m]) actuals[m] = {};
-        actuals[m].labour    = 0;
-        actuals[m].materials = 0;
-        actuals[m].overhead  = 0;
-        actuals[m].billing   = 0;
+        actuals[m].labour    = labPM;
+        actuals[m].materials = matPM;
+        actuals[m].overhead  = ovhPM;
+        actuals[m].billing   = bilPM;
       });
-      // Put the lump sums on the last elapsed month
-      actuals[lastMonth].labour    = labToDate;
-      actuals[lastMonth].materials = matToDate;
-      actuals[lastMonth].overhead  = ovhToDate;
-      actuals[lastMonth].billing   = netBilToDate;
     }
   }
 
@@ -1751,6 +1843,7 @@ async function saveJob() {
     overhead: parseFloat(document.getElementById('f-overhead').value) || 0,
     retention: retPct,
     moiety: parseInt(document.getElementById('f-moiety').value) || 12,
+    paymentTerms: parseInt(document.getElementById('f-payment-terms').value) || 1,
     status: document.getElementById('f-status').value,
     retentionReleases: editIdx !== null ? (jobs[editIdx].retentionReleases || { m1: false, m2: false }) : { m1: false, m2: false },
     retentionReceivedDates: editIdx !== null ? (jobs[editIdx].retentionReceivedDates || {}) : {},

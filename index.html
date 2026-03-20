@@ -312,12 +312,17 @@
     <div class="form-grid">
       <div><label>Job reference</label><input id="f-name" placeholder="e.g. RF-2025-001"></div>
       <div><label>Client</label><input id="f-client" placeholder="Client name"></div>
-      <div><label>Status</label><select id="f-status"><option value="active">Active</option><option value="future">Future</option><option value="complete">Complete</option></select></div>
+      <div><label>Project name</label><input id="f-project" placeholder="e.g. 14 Mill Lane reroofing"></div>
     </div>
     <div class="form-grid">
+      <div><label>Status</label><select id="f-status"><option value="active">Active</option><option value="future">Future</option><option value="complete">Complete</option></select></div>
       <div><label>Start month</label><input type="month" id="f-start"></div>
       <div><label>Duration (months)</label><input type="number" id="f-dur" min="1" max="24" value="3"></div>
+    </div>
+    <div class="form-grid">
       <div><label>Contracted value (£)</label><input type="number" id="f-contract" placeholder="0"></div>
+      <div></div>
+      <div></div>
     </div>
     <div class="sub-label">Forecast costs (total for whole job £)</div>
     <div class="form-grid">
@@ -518,6 +523,7 @@ async function sbFetch(path, opts = {}) {
 function dbToJob(row) {
   return {
     id: row.id, name: row.name, client: row.client || '',
+    projectName: row.project_name || '',
     status: row.status || 'active', start: row.start_month, dur: row.duration,
     contract: parseFloat(row.contract) || 0, labour: parseFloat(row.labour) || 0,
     materials: parseFloat(row.materials) || 0, overhead: parseFloat(row.overhead) || 0,
@@ -533,7 +539,7 @@ function dbToJob(row) {
 
 function jobToDb(j) {
   return {
-    name: j.name, client: j.client, status: j.status, start_month: j.start,
+    name: j.name, client: j.client, project_name: j.projectName || '', status: j.status, start_month: j.start,
     duration: j.dur, contract: j.contract, labour: j.labour,
     materials: j.materials, overhead: j.overhead, retention: j.retention,
     moiety: j.moiety || 12,
@@ -1349,7 +1355,7 @@ function renderJobsTable() {
   const el = document.getElementById('jobs');
   if (!jobs.length) { el.innerHTML = '<div class="empty-state">No jobs yet — click "+ Add job" to get started.</div>'; return; }
   const cur = getCurrentMonth();
-  let html = '<div class="card" style="padding:0;overflow:hidden;overflow-x:auto"><table><thead><tr><th>Job ref</th><th>Client</th><th>Period</th><th>Contract</th><th>Labour</th><th>Materials</th><th>Overhead</th><th>Total cost</th><th>Margin</th><th>Progress</th><th>Status</th><th></th></tr></thead><tbody>';
+  let html = '<div class="card" style="padding:0;overflow:hidden;overflow-x:auto"><table><thead><tr><th>Job ref</th><th>Project</th><th>Client</th><th>Period</th><th>Contract</th><th>Labour</th><th>Materials</th><th>Overhead</th><th>Total cost</th><th>Margin</th><th>Progress</th><th>Status</th><th></th></tr></thead><tbody>';
   let totContract=0, totLabour=0, totMaterials=0, totOverhead=0;
   jobs.forEach((j, i) => {
     const tc = j.labour + j.materials + j.overhead;
@@ -1359,6 +1365,7 @@ function renderJobsTable() {
     totContract += j.contract; totLabour += j.labour; totMaterials += j.materials; totOverhead += j.overhead;
     html += `<tr>
       <td><strong>${j.name}</strong></td>
+      <td>${j.projectName || '—'}</td>
       <td>${j.client || '—'}</td>
       <td style="white-space:nowrap">${monthLabel(j.start)} – ${monthLabel(months[months.length - 1])}</td>
       <td>${fmt(j.contract)}</td>
@@ -1407,7 +1414,7 @@ function triggerCsvDownload(content, filename) {
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
 }
 const CSV_HEADERS = [
-  'job_ref','client','status','start_month','duration',
+  'job_ref','client','project_name','status','start_month','duration',
   'contract_gross','labour_cost','materials_cost','overhead_cost',
   'retention_pct','payment_terms','defects_period',
   'labour_paid_to_date','materials_paid_to_date','overhead_paid_to_date','cash_received_to_date'
@@ -1416,7 +1423,7 @@ const CSV_HEADERS = [
 function downloadCsvTemplate() {
   const rows = [
     CSV_HEADERS.join(','),
-    'RF-2025-001,Henderson Property,active,Nov-25,8,65000,22000,19000,3500,5,30,12,,,,'
+    'RF-2025-001,Henderson Property,14 Mill Lane reroofing,active,Nov-25,8,65000,22000,19000,3500,5,30,12,,,,'
   ];
   triggerCsvDownload(rows.join('\n'), 'job-import-template.csv');
 }
@@ -1458,6 +1465,7 @@ function handleCsvImport(input) {
       const errors = [];
       const jobRef    = row.job_ref || row.name || '';
       const client    = row.client || '';
+      const projectName = row.project_name || '';
       const status    = ['active','future','complete'].includes((row.status||'').toLowerCase()) ? row.status.toLowerCase() : 'active';
       const start     = parseStartMonth(row.start_month || '');
       const dur       = parseInt(row.duration) || 0;
@@ -1477,7 +1485,7 @@ function handleCsvImport(input) {
       if (dur < 1)       errors.push('Duration must be at least 1');
       if (contract <= 0) errors.push('Contract gross must be > 0');
       if (jobs.some(j => j.name.toLowerCase() === jobRef.toLowerCase())) errors.push(`Job ref "${jobRef}" already exists — will be skipped`);
-      rows.push({ jobRef, client, status, start, dur, contract, labour, materials, overhead, retention, terms, moiety, labTD, matTD, ovhTD, bilTD, errors, valid: errors.length === 0 });
+      rows.push({ jobRef, client, projectName, status, start, dur, contract, labour, materials, overhead, retention, terms, moiety, labTD, matTD, ovhTD, bilTD, errors, valid: errors.length === 0 });
     }
     csvParsedRows = rows;
     showImportPreview(rows);
@@ -1500,6 +1508,7 @@ function showImportPreview(rows) {
       <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd"></th>
       <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Job ref</th>
       <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Client</th>
+      <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Project</th>
       <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Start</th>
       <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Months</th>
       <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Contract</th>
@@ -1516,6 +1525,7 @@ function showImportPreview(rows) {
       <td style="padding:5px 8px">${icon}</td>
       <td style="padding:5px 8px;font-weight:500">${r.jobRef||'—'}</td>
       <td style="padding:5px 8px">${r.client||'—'}</td>
+      <td style="padding:5px 8px">${r.projectName||'—'}</td>
       <td style="padding:5px 8px">${r.start ? monthLabel(r.start) : '—'}</td>
       <td style="padding:5px 8px">${r.dur||'—'}</td>
       <td style="padding:5px 8px">£${(r.contract||0).toLocaleString('en-GB')}</td>
@@ -1557,7 +1567,7 @@ async function confirmImport() {
       }
     }
     const job = {
-      name: r.jobRef, client: r.client, status: r.status,
+      name: r.jobRef, client: r.client, projectName: r.projectName || '', status: r.status,
       start: r.start, dur: r.dur, contract: r.contract,
       labour: r.labour, materials: r.materials, overhead: r.overhead,
       retention: r.retention, moiety: r.moiety, paymentTerms: r.terms,
@@ -1937,15 +1947,16 @@ function renderActualsSection() {
 
   // Pills — show job name and client
   let pills = '<div class="pill-row">' + jobs.map((jj, i) => {
-    const label = jj.client ? `${jj.name} <span style="opacity:.6;font-size:11px">· ${jj.client}</span>` : jj.name;
+    const label = jj.projectName
+      ? `${jj.name} <span style="opacity:.6;font-size:11px">· ${jj.projectName}</span>`
+      : jj.client ? `${jj.name} <span style="opacity:.6;font-size:11px">· ${jj.client}</span>` : jj.name;
     return `<button class="job-pill ${i === activeActualsJob ? 'active' : ''}" onclick="setActualsJob(${i})">${label}</button>`;
   }).join('') + '</div>';
 
-  // Job header with client name and edit button
   const jobHeader = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:10px">
       <div>
-        <div style="font-size:16px;font-weight:600">${j.name}</div>
+        <div style="font-size:16px;font-weight:600">${j.name}${j.projectName ? ` — ${j.projectName}` : ''}</div>
         ${j.client ? `<div style="font-size:13px;color:#888;margin-top:2px">${j.client}</div>` : ''}
       </div>
       <button class="btn btn-sm" onclick="editJob(${activeActualsJob})">Edit job details</button>
@@ -2921,7 +2932,7 @@ function updateRetentionCalc() {
 function openAddJob() {
   editIdx = null;
   document.getElementById('modal-title').textContent = 'Add job';
-  ['f-name','f-client','f-labour','f-materials','f-overhead','f-contract',
+  ['f-name','f-client','f-project','f-labour','f-materials','f-overhead','f-contract',
    'f-labour-to-date','f-materials-to-date','f-overhead-to-date','f-billed-to-date'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-dur').value = 3; document.getElementById('f-retention').value = 5;
   document.getElementById('f-status').value = 'active'; document.getElementById('f-moiety').value = '12';
@@ -2938,6 +2949,7 @@ function editJob(idx) {
   editIdx = idx; const j = jobs[idx];
   document.getElementById('modal-title').textContent = 'Edit job';
   document.getElementById('f-name').value = j.name; document.getElementById('f-client').value = j.client;
+  document.getElementById('f-project').value = j.projectName || '';
   document.getElementById('f-start').value = j.start; document.getElementById('f-dur').value = j.dur;
   document.getElementById('f-contract').value = j.contract; document.getElementById('f-labour').value = j.labour;
   document.getElementById('f-materials').value = j.materials; document.getElementById('f-overhead').value = j.overhead;
@@ -3036,6 +3048,7 @@ async function saveJob() {
   const job = {
     id: editIdx !== null ? jobs[editIdx].id : undefined,
     name, client: document.getElementById('f-client').value.trim(),
+    projectName: document.getElementById('f-project').value.trim(),
     start: startVal,
     dur: durVal,
     contract: parseFloat(document.getElementById('f-contract').value) || 0,

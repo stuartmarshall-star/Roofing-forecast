@@ -2404,16 +2404,25 @@ function renderForecastSection() {
   }
 
   let cumulative = anchorBalance;
-  rows.forEach(r => {
-    // If we have an actual recorded balance for this month, use it as the anchor (overrides forecast)
+  let carryForward = 0; // billing due in an actual-balance month that hasn't landed yet
+  rows.forEach((r, ri) => {
     if (balanceHistory[r.m] !== undefined) {
+      // This month has a recorded actual balance.
+      // Billing income due this month (per payment lag) hasn't been included in the closing
+      // balance (which is costs only, before income). Carry it forward to the next month.
+      carryForward = r.tNetBilling + r.tRetReceived + r.tCreditsReceived;
       r.cumCash = balanceHistory[r.m];
       r.cumIsActual = true;
-      cumulative = balanceHistory[r.m]; // reset running total from this actual
+      r.carryForwardNote = carryForward > 0 ? carryForward : 0;
+      cumulative = balanceHistory[r.m];
     } else {
-      cumulative += r.cash;
+      // Add any income carried forward from the previous actual-balance month
+      const cf = carryForward;
+      carryForward = 0;
+      cumulative += r.cash + cf;
       r.cumCash = cumulative;
       r.cumIsActual = false;
+      r.carryForwardNote = cf > 0 ? cf : 0;
     }
   });
 
@@ -2544,7 +2553,7 @@ function renderForecastSection() {
       <td>${retRecCell}</td>
       <td>${r.tCreditsReceived > 0 ? `<span style="color:#6d28d9;font-weight:600">+${fmt(r.tCreditsReceived)}</span>` : '<span style="color:#ccc">—</span>'}</td>
       <td class="${r.cash>=0?'green':'red'}"><strong>${r.cash>=0?'+':''}${fmt(r.cash)}</strong></td>
-      <td style="${cumStyle}" class="${r.cumIsActual?'':''+cumClass}">${r.cumCash>=0?'+':''}${fmt(r.cumCash)}${r.cumIsActual?'<div style="font-size:10px;font-weight:500;color:#15803d">actual</div>':''}</td>
+      <td style="${cumStyle}" class="${r.cumIsActual?'':''+cumClass}">${r.cumCash>=0?'+':''}${fmt(r.cumCash)}${r.cumIsActual?'<div style="font-size:10px;font-weight:500;color:#15803d">actual</div>':''}${r.carryForwardNote>0&&!r.cumIsActual?`<div style="font-size:10px;color:#1d4ed8">incl. ${fmt(r.carryForwardNote)} b/fwd</div>`:''}</td>
     </tr>`;
 
     // Detail sub-row (hidden by default)

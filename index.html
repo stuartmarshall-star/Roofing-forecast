@@ -744,6 +744,8 @@ async function clearBalanceCell(month, ri) {
   updateObDisplay();
   await saveBalanceHistory();
 }
+
+async function resetOpeningBalance() {
   const prevM = prevMonth(getCurrentMonth());
   if (!confirm(`Remove the recorded closing balance for ${monthLabel(prevM)}? The forecast will revert to using projected figures and the entry will be marked as required.`)) return;
   delete balanceHistory[prevM];

@@ -353,14 +353,14 @@
     <!-- Existing contract toggle -->
     <div style="border-top:0.5px solid #e8e8e8;padding-top:1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:10px">
       <input type="checkbox" id="f-existing" style="width:auto;cursor:pointer" onchange="toggleExistingFields()">
-      <label for="f-existing" style="font-size:13px;font-weight:500;color:#1a1a1a;cursor:pointer;margin:0">Overwrite actuals with totals-to-date (spread evenly)</label>
+      <label for="f-existing" style="font-size:13px;font-weight:500;color:#1a1a1a;cursor:pointer;margin:0">Backfill past months with totals-to-date</label>
     </div>
     <div id="f-existing-fields" style="display:none">
       <div style="background:#fef9c3;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:12px;color:#a16207">
-        Enter cash actually <strong>paid or received</strong> — not invoiced amounts.<br>
+        Enter totals <strong>paid or received to date</strong>. These will be spread evenly across past months <strong>that don't already have actuals entered</strong> — months with existing actuals are preserved.<br>
         <strong>Labour &amp; overhead:</strong> total cash paid to date.&nbsp;
-        <strong>Materials:</strong> total paid to end of last full month (excludes this month's bill not yet due).&nbsp;
-        <strong>Billing:</strong> cash actually received in your bank (excludes invoices sent but not yet paid).
+        <strong>Materials:</strong> total paid to end of last full month.&nbsp;
+        <strong>Billing:</strong> cash actually received in your bank.
       </div>
       <div class="sub-label">Costs paid to date (£ cash out)</div>
       <div class="form-grid">
@@ -1862,7 +1862,8 @@ function renderActualsSection() {
     + '</tr></thead><tbody>';
 
   months.forEach(m => {
-    const isPast = m <= cur, vals = {};
+    const isPast = m < cur;  // only closed months — current month not yet enterable
+    const vals = {};
     fields.forEach(f => { vals[f] = scheds[f][m]; });
     const tc = vals.labour.value + vals.materials.value + vals.overhead.value;
     const cash = vals.billing.value - tc;
@@ -2723,13 +2724,14 @@ async function saveJob() {
   const durVal = parseInt(document.getElementById('f-dur').value) || 1;
   const retPct = parseFloat(document.getElementById('f-retention').value) || 0;
 
-  // Build actuals — start from existing if editing, fresh if new
+  // Build actuals — preserve any individually-entered actuals; only backfill if checkbox ticked
+  // Start from existing actuals on edit, empty on new
   let actuals = editIdx !== null ? { ...jobs[editIdx].actuals } : {};
 
   if (isExisting) {
     const cur = getCurrentMonth();
     const allJobMonths = getMonths(startVal, durVal);
-    // Only include months strictly before current month — current month is not yet complete
+    // Only backfill months strictly before current that don't already have manually entered actuals
     const elapsedMonths = allJobMonths.filter(m => m < cur);
 
     if (elapsedMonths.length > 0) {
@@ -2740,19 +2742,36 @@ async function saveJob() {
       const bilToDate = parseFloat(document.getElementById('f-billed-to-date').value)    || 0;
       const netBilToDate = bilToDate * (1 - retPct / 100);
 
-      // Spread evenly across elapsed months, overwriting previous backfill
-      const labPM = labToDate / n;
-      const matPM = matToDate / n;
-      const ovhPM = ovhToDate / n;
-      const bilPM = netBilToDate / n;
-
+      // How much is already covered by existing actuals
+      let existingL=0, existingM=0, existingO=0, existingB=0;
+      const monthsWithActuals = new Set();
       elapsedMonths.forEach(m => {
-        if (!actuals[m]) actuals[m] = {};
-        actuals[m].labour    = labPM;
-        actuals[m].materials = matPM;
-        actuals[m].overhead  = ovhPM;
-        actuals[m].billing   = bilPM;
+        const a = actuals[m];
+        if (a && Object.keys(a).some(k => !k.startsWith('_') && a[k] !== undefined)) {
+          existingL += a.labour    || 0;
+          existingM += a.materials || 0;
+          existingO += a.overhead  || 0;
+          existingB += a.billing   || 0;
+          monthsWithActuals.add(m);
+        }
       });
+
+      // Only fill months that don't yet have actuals
+      const monthsToFill = elapsedMonths.filter(m => !monthsWithActuals.has(m));
+      if (monthsToFill.length > 0) {
+        const nFill = monthsToFill.length;
+        const labPM = Math.max(0, labToDate - existingL) / nFill;
+        const matPM = Math.max(0, matToDate - existingM) / nFill;
+        const ovhPM = Math.max(0, ovhToDate - existingO) / nFill;
+        const bilPM = Math.max(0, netBilToDate - existingB) / nFill;
+        monthsToFill.forEach(m => {
+          if (!actuals[m]) actuals[m] = {};
+          actuals[m].labour    = labPM;
+          actuals[m].materials = matPM;
+          actuals[m].overhead  = ovhPM;
+          actuals[m].billing   = bilPM;
+        });
+      }
     }
   }
 

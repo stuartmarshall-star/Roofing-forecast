@@ -1235,13 +1235,14 @@ function renderSummary() {
       if (!items.length) return;
       html += `<div style="font-size:12px;font-weight:600;color:#555;margin:.75rem 0 .35rem">${cat.icon} ${cat.label}</div>
       <div class="card" style="padding:0;overflow:hidden;margin-bottom:.75rem">
-      <table style="font-size:13px"><thead><tr><th>Job ref</th><th>Client</th><th>Detail</th><th>Severity</th><th></th></tr></thead><tbody>`;
+      <table style="font-size:13px"><thead><tr><th>Job ref</th><th>Project</th><th>Client</th><th>Detail</th><th>Severity</th><th></th></tr></thead><tbody>`;
       items.forEach(({ j, r }) => {
         const sevBadge = r.severity === 'high'
           ? '<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:8px;font-size:11px">High</span>'
           : '<span style="background:#fef9c3;color:#a16207;padding:2px 8px;border-radius:8px;font-size:11px">Medium</span>';
         html += `<tr style="background:${r.severity==='high'?'#fef2f2':'#fefce8'};border-bottom:1px solid #f0f0f0">
           <td style="font-weight:500">${j.name}</td>
+          <td style="color:#888;font-size:12px">${j.projectName||'—'}</td>
           <td>${j.client||'—'}</td>
           <td>${r.label}</td>
           <td>${sevBadge}</td>

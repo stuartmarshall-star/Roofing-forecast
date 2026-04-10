@@ -1755,6 +1755,16 @@ async function confirmActualsImport() {
 
 function setActualsJob(idx) { activeActualsJob = idx; renderActualsSection(); }
 
+function setActual(jobIdx, month, field, val) {
+  if (!jobs[jobIdx].actuals[month]) jobs[jobIdx].actuals[month] = {};
+  const n = parseFloat(val);
+  if (val === '' || isNaN(n)) delete jobs[jobIdx].actuals[month][field];
+  else jobs[jobIdx].actuals[month][field] = n;
+  renderAll();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => dbSave(jobs[jobIdx]), 800);
+}
+
 function renderActualsSection() {
   const el = document.getElementById('actuals');
   if (!jobs.length) { el.innerHTML = '<div class="empty-state">No jobs yet.</div>'; return; }
@@ -1769,104 +1779,95 @@ function renderActualsSection() {
     .sort();
   const allActualsMonths = [...preStartDepositMonths, ...months];
 
-  // Pills — show job name and client
+  // Pills
   let pills = '<div class="pill-row">' + jobs.map((jj, i) => {
     const label = jj.projectName
-      ? `${jj.name} <span style="opacity:.6;font-size:11px">· ${jj.projectName}</span>`
-      : jj.client ? `${jj.name} <span style="opacity:.6;font-size:11px">· ${jj.client}</span>` : jj.name;
-    return `<button class="job-pill ${i === activeActualsJob ? 'active' : ''}" onclick="setActualsJob(${i})">${label}</button>`;
+      ? jj.name + ' <span style="opacity:.6;font-size:11px">&middot; ' + jj.projectName + '</span>'
+      : jj.client ? jj.name + ' <span style="opacity:.6;font-size:11px">&middot; ' + jj.client + '</span>' : jj.name;
+    return '<button class="job-pill ' + (i === activeActualsJob ? 'active' : '') + '" onclick="setActualsJob(' + i + ')">' + label + '</button>';
   }).join('') + '</div>';
 
-  const jobHeader = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:10px">
-      <div>
-        <div style="font-size:16px;font-weight:600">${j.name}${j.projectName ? ' \u2014 ' + j.projectName : ''}</div>
-        ${j.client ? '<div style="font-size:13px;color:#888;margin-top:2px">'+j.client+'</div>' : ''}
-      </div>
-      <button class="btn btn-sm" onclick="editJob(${activeActualsJob})">Edit job details</button>
-    </div>
-    ${(() => {
-      const preStart = credits.filter(c => c.category==='deposit' && c.linkedJobRef===j.name && c.received && c.receivedMonth < j.start);
-      if (!preStart.length) return '';
-      const items = preStart.map(c => c.name + ' — ' + fmt(c.amount) + ' received ' + monthLabel(c.receivedMonth) + ', recorded against ' + monthLabel(j.start) + ' (project start)').join(' &nbsp;|&nbsp; ');
-      return '<div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:8px;padding:8px 14px;margin-bottom:1rem;font-size:12px;color:#1d4ed8"><strong>Pre-start deposit' + (preStart.length>1?'s':'') + ' received:</strong> ' + items + '</div>';
-    })()}`;
+  const jobHeader = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:10px">'
+    + '<div><div style="font-size:16px;font-weight:600">' + j.name + (j.projectName ? ' \u2014 ' + j.projectName : '') + '</div>'
+    + (j.client ? '<div style="font-size:13px;color:#888;margin-top:2px">' + j.client + '</div>' : '')
+    + '</div><button class="btn btn-sm" onclick="editJob(' + activeActualsJob + ')">Edit job details</button></div>';
 
   // Balance strip
   let bal = '<div class="balance-strip">';
   ['labour', 'materials', 'overhead'].forEach(f => {
     const s = getSummary(j, f), pct = s.originalTotal > 0 ? Math.round(s.actualSpent / s.originalTotal * 100) : 0;
     const lbl = { labour: 'Labour', materials: 'Materials', overhead: 'Overhead' }[f];
-    bal += `<div class="balance-box">
-      <div class="balance-box-label">${lbl} — budget</div>
-      <div class="balance-box-val">${fmt(s.originalTotal)}</div>
-      <div style="font-size:11px;color:#888;margin-top:2px">
-        <span style="color:#16a34a">Actual spent: ${fmt(s.actualSpent)}</span> &nbsp;|&nbsp; Remaining: ${fmt(s.balance)}
-      </div>
-      <div class="progress-bar-wrap" style="margin-top:6px"><div class="progress-bar" style="width:${Math.min(pct,100)}%;background:#16a34a"></div></div>
-    </div>`;
+    bal += '<div class="balance-box">'
+      + '<div class="balance-box-label">' + lbl + ' \u2014 budget</div>'
+      + '<div class="balance-box-val">' + fmt(s.originalTotal) + '</div>'
+      + '<div style="font-size:11px;color:#888;margin-top:2px"><span style="color:#16a34a">Actual spent: ' + fmt(s.actualSpent) + '</span> &nbsp;|&nbsp; Remaining: ' + fmt(s.balance) + '</div>'
+      + '<div class="progress-bar-wrap" style="margin-top:6px"><div class="progress-bar" style="width:' + Math.min(pct,100) + '%;background:#16a34a"></div></div>'
+      + '</div>';
   });
   bal += '</div>';
 
   const bs = getSummary(j, 'billing'), bpct = bs.originalTotal > 0 ? Math.round(bs.actualSpent / bs.originalTotal * 100) : 0;
+  bal += '<div class="balance-strip">'
+    + '<div class="balance-box" style="grid-column:span 2">'
+    + '<div class="balance-box-label">Billing received (excl. retention) \u2014 contract ' + fmt(j.contract) + ', retention ' + j.retention + '%</div>'
+    + '<div class="balance-box-val">' + fmt(bs.originalTotal) + '</div>'
+    + '<div style="font-size:11px;color:#888;margin-top:2px"><span style="color:#16a34a">Received: ' + fmt(bs.actualSpent) + '</span> &nbsp;|&nbsp; Still to bill: ' + fmt(bs.balance) + ' &nbsp;|&nbsp; Retention: ' + fmt(j.contract * j.retention / 100) + '</div>'
+    + '<div class="progress-bar-wrap" style="margin-top:6px"><div class="progress-bar" style="width:' + Math.min(bpct,100) + '%;background:#1d4ed8"></div></div>'
+    + '</div>'
+    + '<div class="balance-box">'
+    + '<div class="balance-box-label">Total cost remaining</div>'
+    + '<div class="balance-box-val">' + fmt(['labour','materials','overhead'].reduce((s,f) => s + getSummary(j, f).balance, 0)) + '</div>'
+    + '<div style="font-size:11px;color:#888;margin-top:2px">Forecast spend still to come</div>'
+    + '</div>'
+    + '</div>';
 
-  // Margin calculations
-  const sL = getSummary(j, 'labour'), sM = getSummary(j, 'materials'), sO = getSummary(j, 'overhead');
-  // Forecast margin — full job
-  const fcTotalCost = j.labour + j.materials + j.overhead;
-  const fcNet = j.contract * (1 - j.retention / 100);
-  const fcMargin = fcNet > 0 ? (fcNet - fcTotalCost) / fcNet * 100 : 0;
-  // Actual margin to date — based on actuals entered
-  const actCost = sL.actualSpent + sM.actualSpent + sO.actualSpent;
-  const actBilling = bs.actualSpent;
-  const actMargin = actBilling > 0 ? (actBilling - actCost) / actBilling * 100 : null;
-  const marginDiff = actMargin !== null ? actMargin - fcMargin : null;
-  const marginCls = actMargin !== null ? (actMargin >= fcMargin ? 'green' : 'red') : '';
+  const legend = '<div style="display:flex;gap:16px;font-size:12px;color:#888;margin-bottom:.75rem;flex-wrap:wrap">'
+    + '<span><span class="badge badge-actual" style="margin-right:4px">actual</span> Figure you entered</span>'
+    + '<span><span class="badge badge-reforecast" style="margin-right:4px">reforecast</span> Auto-adjusted from actuals</span>'
+    + '<span><span class="badge badge-forecast" style="margin-right:4px">original forecast</span> Even spread, no actuals yet</span>'
+    + '</div>';
 
-  bal += `<div class="balance-strip">
-    <div class="balance-box" style="grid-column:span 2">
-      <div class="balance-box-label">Billing received (excl. retention) — contract ${fmt(j.contract)}, retention ${j.retention}%</div>
-      <div class="balance-box-val">${fmt(bs.originalTotal)}</div>
-      <div style="font-size:11px;color:#888;margin-top:2px">
-        <span style="color:#16a34a">Received: ${fmt(bs.actualSpent)}</span> &nbsp;|&nbsp;
-        Still to bill: ${fmt(bs.balance)} &nbsp;|&nbsp; Retention: ${fmt(j.contract * j.retention / 100)}
-        ${(() => { const deps = credits.filter(c=>c.category==='deposit'&&c.linkedJobRef===j.name); if (!deps.length) return ''; const total=deps.reduce((s,c)=>s+c.amount,0); const rcvd=deps.filter(c=>c.received).length; return '&nbsp;|&nbsp; <span style="color:#1d4ed8">Deposits: '+fmt(total)+' ('+rcvd+' received)</span>'; })()}
-      </div>
-      <div class="progress-bar-wrap" style="margin-top:6px"><div class="progress-bar" style="width:${Math.min(bpct,100)}%;background:#1d4ed8"></div></div>
-    </div>
-    <div class="balance-box">
-      <div class="balance-box-label">Total cost remaining</div>
-      <div class="balance-box-val">${fmt(['labour','materials','overhead'].reduce((s,f) => s + getSummary(j, f).balance, 0))}</div>
-      <div style="font-size:11px;color:#888;margin-top:2px">Forecast spend still to come</div>
-    </div>
-  </div>
-  <div class="balance-strip">
-    <div class="balance-box">
-      <div class="balance-box-label">Forecast margin (whole job)</div>
-      <div class="balance-box-val">${fmtPct(fcMargin)}</div>
-      <div style="font-size:11px;color:#888;margin-top:2px">Net ${fmt(fcNet)} minus costs ${fmt(fcTotalCost)}</div>
-    </div>
-    <div class="balance-box">
-      <div class="balance-box-label">Actual margin to date</div>
-      <div class="balance-box-val ${marginCls}">${actMargin !== null ? fmtPct(actMargin) : '—'}</div>
-      <div style="font-size:11px;color:#888;margin-top:2px">
-        ${actMargin !== null
-          ? 'Billing ' + fmt(actBilling) + ' minus costs ' + fmt(actCost)
-          : 'No actuals entered yet'}
-      </div>
-    </div>
-    <div class="balance-box">
-      <div class="balance-box-label">Margin variance</div>
-      <div class="balance-box-val ${marginCls}">${marginDiff !== null ? (marginDiff >= 0 ? '+' : '') + fmtPct(marginDiff) : '—'}</div>
-      <div style="font-size:11px;color:#888;margin-top:2px">
-        ${marginDiff !== null
-          ? (marginDiff >= 0 ? 'Ahead of forecast' : 'Behind forecast')
-          : 'Enter actuals to see variance'}
-      </div>
-    </div>
-  </div>`;
+  let tbl = '<div class="card" style="padding:0;overflow:hidden"><table><thead><tr>'
+    + '<th>Month</th><th>Labour</th><th>Materials</th><th>Overhead</th><th>Total cost</th><th>Billing recv.</th><th>Cashflow</th><th>Type</th>'
+    + '</tr></thead><tbody>';
 
-  el.innerHTML = pills + jobHeader + bal;
+  months.forEach(m => {
+    const isPast = m <= cur, vals = {};
+    fields.forEach(f => { vals[f] = scheds[f][m]; });
+    const tc = vals.labour.value + vals.materials.value + vals.overhead.value;
+    const cash = vals.billing.value - tc;
+    const hasAct = fields.some(f => vals[f].type === 'actual');
+    const hasRef = fields.some(f => vals[f].type === 'reforecast');
+    const rowType = hasAct ? 'actual' : hasRef ? 'reforecast' : 'forecast';
+    const bg = hasAct ? 'background:#f9fafb' : '';
+
+    function cell(field) {
+      const e = vals[field];
+      const a = j.actuals[m] && j.actuals[m][field] !== undefined ? j.actuals[m][field] : '';
+      if (isPast) return '<input class="actual-input" type="number" placeholder="' + Math.round(e.value) + '" value="' + a + '" onchange="setActual(' + activeActualsJob + ',\'' + m + '\',\'' + field + '\',this.value)">';
+      return '<span class="' + (e.type === 'reforecast' ? 'reforecast-val' : 'forecast-val') + '">' + fmt(e.value) + '</span>';
+    }
+
+    tbl += '<tr style="' + bg + '">'
+      + '<td style="white-space:nowrap;font-weight:500">' + monthLabel(m) + '</td>'
+      + ['labour','materials','overhead'].map(f => '<td>' + cell(f) + '</td>').join('')
+      + '<td style="font-weight:500">' + fmt(tc) + '</td>'
+      + '<td>' + cell('billing') + '</td>'
+      + '<td class="' + (cash >= 0 ? 'green' : 'red') + '" style="font-weight:500">' + (cash >= 0 ? '+' : '') + fmt(cash) + '</td>'
+      + '<td><span class="badge badge-' + rowType + '">' + rowType + '</span></td>'
+      + '</tr>';
+  });
+
+  let tL=0,tM=0,tO=0,tB=0;
+  months.forEach(m=>{tL+=scheds.labour[m].value;tM+=scheds.materials[m].value;tO+=scheds.overhead[m].value;tB+=scheds.billing[m].value;});
+  const tC=tL+tM+tO;
+  tbl += '<tr style="background:#f9fafb;font-weight:600">'
+    + '<td>Total</td><td>' + fmt(tL) + '</td><td>' + fmt(tM) + '</td><td>' + fmt(tO) + '</td>'
+    + '<td>' + fmt(tC) + '</td><td>' + fmt(tB) + '</td>'
+    + '<td class="' + (tB-tC>=0?'green':'red') + '">' + (tB-tC>=0?'+':'') + fmt(tB-tC) + '</td><td></td>'
+    + '</tr>';
+
+  el.innerHTML = pills + jobHeader + bal + legend + tbl + '</tbody></table></div>';
 }
 
 // ── Forecast ──────────────────────────────────────────────────────────────────

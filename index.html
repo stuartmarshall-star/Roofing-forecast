@@ -316,7 +316,7 @@
     <div class="form-grid">
       <div><label>Status</label><select id="f-status"><option value="active">Active</option><option value="future">Future</option><option value="complete">Complete</option></select></div>
       <div><label>Start month</label><input type="text" id="f-start" placeholder="MM/YY" style="width:100px"></div>
-      <div><label>Duration (months)</label><input type="number" id="f-dur" min="1" max="24" value="3"></div>
+      <div><label>Duration (months)</label><input type="number" id="f-dur" min="1" max="240" value="3"><div id="f-dur-lock" style="display:none"></div></div>
     </div>
     <div class="form-grid">
       <div><label>Contracted value (£)</label><input type="number" id="f-contract" placeholder="0"></div>
@@ -2775,9 +2775,36 @@ function editJob(idx) {
   document.getElementById('f-moiety').value = String(j.moiety || 12);
   document.getElementById('f-payment-terms').value = String(j.paymentTerms || 1);
 
-  // Calculate current actuals totals from backfilled data
-  const months = getMonths(j.start, j.dur);
+  // Check if this job is auto-extended due to unallocated balance
   const cur = getCurrentMonth();
+  const scheduled = getMonths(j.start, j.dur);
+  const lastScheduled = scheduled[scheduled.length - 1];
+  const isAutoExtended = j.status !== 'complete' && lastScheduled < cur &&
+    getEffectiveMonths(j).length > scheduled.length;
+
+  // Lock duration if auto-extended — must be reviewed before reducing
+  const durEl = document.getElementById('f-dur');
+  const durLockEl = document.getElementById('f-dur-lock');
+  if (isAutoExtended) {
+    durEl.disabled = true;
+    durEl.style.background = '#f3f4f6';
+    durEl.style.color = '#9ca3af';
+    if (durLockEl) {
+      durLockEl.style.display = 'block';
+      durLockEl.innerHTML = '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:7px 12px;font-size:12px;color:#92400e;margin-top:4px">'
+        + '🔒 Duration locked — this job has unallocated balance remaining past its end date. '
+        + 'Mark it <strong>Complete</strong> in the actuals tab, or increase the duration to account for the remaining work.'
+        + '</div>';
+    }
+  } else {
+    durEl.disabled = false;
+    durEl.style.background = '';
+    durEl.style.color = '';
+    if (durLockEl) durLockEl.style.display = 'none';
+  }
+
+  // Calculate current actuals totals
+  const months = getMonths(j.start, j.dur);
   const elapsedMonths = months.filter(m => m < cur);
   let totL=0, totM=0, totO=0, totNetB=0, hasActuals=false;
   elapsedMonths.forEach(m => {
@@ -2805,12 +2832,9 @@ function editJob(idx) {
   const summaryEl = document.getElementById('f-actuals-summary');
   if (hasActuals) {
     summaryEl.style.display = 'block';
-    summaryEl.innerHTML = `
-      <div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:8px;padding:10px 14px;font-size:12px;color:#1d4ed8">
-        <strong>Editing historical figures</strong> — the fields below show your current recorded totals.
-        Update any figure and save to recalculate the actuals across all elapsed months.
-        Future months will reforecast automatically from the new remaining budget.
-      </div>`;
+    summaryEl.innerHTML = '<div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:8px;padding:10px 14px;font-size:12px;color:#1d4ed8">'
+      + '<strong>Editing historical figures</strong> — the fields below show your current recorded totals. '
+      + 'Tick the backfill checkbox to recalculate actuals across elapsed months.</div>';
   } else {
     summaryEl.style.display = 'none';
   }
@@ -2819,7 +2843,13 @@ function editJob(idx) {
   document.getElementById('modal-backdrop').classList.add('open');
 }
 
-function closeModal() { document.getElementById('modal-backdrop').classList.remove('open'); }
+function closeModal() {
+  document.getElementById('modal-backdrop').classList.remove('open');
+  const durEl = document.getElementById('f-dur');
+  durEl.disabled = false; durEl.style.background = ''; durEl.style.color = '';
+  const durLockEl = document.getElementById('f-dur-lock');
+  if (durLockEl) durLockEl.style.display = 'none';
+}
 
 async function saveJob() {
   const name = document.getElementById('f-name').value.trim();
@@ -2827,7 +2857,9 @@ async function saveJob() {
 
   const isExisting = document.getElementById('f-existing').checked;
   const startVal = parseMonthInput(document.getElementById('f-start').value);
-  const durVal = parseInt(document.getElementById('f-dur').value) || 1;
+  const durEl = document.getElementById('f-dur');
+  // If duration is locked (auto-extended job), keep existing duration
+  const durVal = durEl.disabled && editIdx !== null ? jobs[editIdx].dur : (parseInt(durEl.value) || 1);
   const retPct = parseFloat(document.getElementById('f-retention').value) || 0;
 
   // Build actuals — preserve any individually-entered actuals; only backfill if checkbox ticked

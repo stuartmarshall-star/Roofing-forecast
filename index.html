@@ -749,7 +749,6 @@ function buildSchedule(job, field) {
   let spentActual = 0;
   const actMonths = new Set();
   let hasPreStartDeposit = false;
-  // For billing, count pre-start deposit actuals so reforecast reduces remaining correctly
   if (field === 'billing') {
     Object.keys(job.actuals).forEach(m => {
       if (m < job.start && job.actuals[m]._depositRef && job.actuals[m].billing !== undefined) {
@@ -764,14 +763,24 @@ function buildSchedule(job, field) {
   });
   const remaining = Math.max(0, originalTotal - spentActual);
   const remainingMonths = months.filter(m => !actMonths.has(m));
+
+  // If job is marked complete, zero out remaining cost forecast (not billing — still track outstanding)
+  const isComplete = job.status === 'complete';
   const reforecastPM = remainingMonths.length > 0 ? remaining / remainingMonths.length : 0;
   const hasActuals = actMonths.size > 0 || hasPreStartDeposit;
   const result = {};
   months.forEach(m => {
     const a = job.actuals[m] && job.actuals[m][field] !== undefined ? job.actuals[m][field] : null;
-    if (a !== null) result[m] = { value: a, type: 'actual' };
-    else if (hasActuals) result[m] = { value: reforecastPM, type: 'reforecast' };
-    else result[m] = { value: originalTotal / job.dur, type: 'original' };
+    if (a !== null) {
+      result[m] = { value: a, type: 'actual' };
+    } else if (isComplete && field !== 'billing') {
+      // Complete job — no more cost forecast for non-actual months
+      result[m] = { value: 0, type: 'complete' };
+    } else if (hasActuals) {
+      result[m] = { value: reforecastPM, type: 'reforecast' };
+    } else {
+      result[m] = { value: originalTotal / job.dur, type: 'original' };
+    }
   });
   return result;
 }
@@ -1106,24 +1115,50 @@ function renderSummary() {
   const atRisk = [];
   jobs.filter(j => j.status === 'active').forEach(j => {
     const months = getMonths(j.start, j.dur);
+    const lastMonth = months[months.length - 1];
     const elapsed = months.filter(m => m < cur);
-    if (!elapsed.length) return;
+    const risks = [];
+
+    // ── Flag 1: billing overrun — job has ended but billing balance remains ──
+    const bilSummary = getSummary(j, 'billing');
+    if (lastMonth < cur && bilSummary.balance > 0) {
+      risks.push({
+        type: 'billing-overrun',
+        label: `Job ended ${monthLabel(lastMonth)} but ${fmt(bilSummary.balance)} still to bill — extend duration or raise final invoice`,
+        severity: 'high'
+      });
+    }
+
+    // ── Flag 2: billing complete but costs remain forecast ───────────────────
+    const labSummary = getSummary(j, 'labour');
+    const matSummary = getSummary(j, 'materials');
+    const ovhSummary = getSummary(j, 'overhead');
+    const remainingCosts = labSummary.balance + matSummary.balance + ovhSummary.balance;
+    if (bilSummary.balance < bilSummary.originalTotal * 0.02 && remainingCosts > 50) {
+      risks.push({
+        type: 'costs-after-billing',
+        label: `Billing appears complete but ${fmt(remainingCosts)} costs still forecast — mark job Complete to zero these out`,
+        severity: 'medium'
+      });
+    }
+
+    // ── Flag 3: cost overrun vs prorated forecast ────────────────────────────
+    if (!elapsed.length) { if (risks.length) atRisk.push({ j, risks }); return; }
     const n = elapsed.length;
     const fcLpm = j.labour / j.dur, fcMpm = j.materials / j.dur, fcOpm = j.overhead / j.dur;
     const fcBpm = j.contract * (1 - j.retention / 100) / j.dur;
     let actCost=0, actBil=0, hasAny=false;
     elapsed.forEach(m => { const a = j.actuals[m]; if (a) { actCost += (a.labour||0)+(a.materials||0)+(a.overhead||0); actBil += a.billing||0; hasAny = true; } });
-    if (!hasAny) return;
-    const fcCost = (fcLpm + fcMpm + fcOpm) * n;
-    const fcBil  = fcBpm * n;
-    const costOverrun = actCost - fcCost;
-    const billingBehind = fcBil - actBil;
-    const risks = [];
-    if (costOverrun > fcCost * 0.05) risks.push({ type: 'cost', label: `Costs ${fmt(costOverrun)} over forecast`, severity: costOverrun > fcCost * 0.15 ? 'high' : 'medium' });
-    if (billingBehind > fcBil * 0.1)  risks.push({ type: 'billing', label: `Billing ${fmt(billingBehind)} behind forecast`, severity: billingBehind > fcBil * 0.2 ? 'high' : 'medium' });
-    const fcMargin = fcBil > 0 ? (fcBil - fcCost) / fcBil * 100 : 0;
-    const actMargin = actBil > 0 ? (actBil - actCost) / actBil * 100 : 0;
-    if (actBil > 0 && actMargin < 15) risks.push({ type: 'margin', label: `Actual margin ${fmtPct(actMargin)} — below 15% threshold`, severity: actMargin < 5 ? 'high' : 'medium' });
+    if (hasAny) {
+      const fcCost = (fcLpm + fcMpm + fcOpm) * n;
+      const fcBil  = fcBpm * n;
+      const costOverrun = actCost - fcCost;
+      const billingBehind = fcBil - actBil;
+      if (costOverrun > fcCost * 0.05) risks.push({ type: 'cost', label: `Costs ${fmt(costOverrun)} over prorated forecast`, severity: costOverrun > fcCost * 0.15 ? 'high' : 'medium' });
+      if (billingBehind > fcBil * 0.1)  risks.push({ type: 'billing', label: `Billing ${fmt(billingBehind)} behind prorated forecast`, severity: billingBehind > fcBil * 0.2 ? 'high' : 'medium' });
+      const actMargin = actBil > 0 ? (actBil - actCost) / actBil * 100 : 0;
+      if (actBil > 0 && actMargin < 15) risks.push({ type: 'margin', label: `Actual margin ${fmtPct(actMargin)} — below 15% threshold`, severity: actMargin < 5 ? 'high' : 'medium' });
+    }
     if (risks.length) atRisk.push({ j, risks });
   });
 
@@ -1153,11 +1188,7 @@ function renderSummary() {
   // Jobs at risk
   html += `<div style="font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Jobs at risk</div>
   <div style="font-size:12px;color:#888;margin-bottom:.75rem">
-    Checks active jobs with actuals entered against three conditions:
-    costs &gt;5% over prorated forecast (High if &gt;15%);
-    billing &gt;10% behind prorated forecast (High if &gt;20%);
-    actual margin below 15% (High if below 5%).
-    Only active jobs with actuals entered are checked.
+    Flags: billing outstanding past end date; billing complete with costs still forecast; costs &gt;5% over prorated forecast; billing &gt;10% behind prorated forecast; actual margin below 15%.
   </div>`;
   if (!atRisk.length) {
     html += `<div class="card" style="padding:1rem 1.25rem;margin-bottom:1.5rem;color:#16a34a;font-size:13px">✓ All active jobs are tracking within forecast — no issues detected.</div>`;
@@ -1755,6 +1786,14 @@ async function confirmActualsImport() {
 
 function setActualsJob(idx) { activeActualsJob = idx; renderActualsSection(); }
 
+async function markJobComplete(idx) {
+  const j = jobs[idx];
+  if (!confirm('Mark "' + j.name + '" as complete? This will remove remaining cost forecast from future months. Billing balance will still show until invoiced. You can undo by editing the job and setting status back to Active.')) return;
+  j.status = 'complete';
+  renderAll();
+  await dbSave(j);
+}
+
 function setActual(jobIdx, month, field, val) {
   if (!jobs[jobIdx].actuals[month]) jobs[jobIdx].actuals[month] = {};
   const n = parseFloat(val);
@@ -1790,7 +1829,32 @@ function renderActualsSection() {
   const jobHeader = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:10px">'
     + '<div><div style="font-size:16px;font-weight:600">' + j.name + (j.projectName ? ' \u2014 ' + j.projectName : '') + '</div>'
     + (j.client ? '<div style="font-size:13px;color:#888;margin-top:2px">' + j.client + '</div>' : '')
-    + '</div><button class="btn btn-sm" onclick="editJob(' + activeActualsJob + ')">Edit job details</button></div>';
+    + '</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    + '<button class="btn btn-sm" onclick="editJob(' + activeActualsJob + ')">Edit job details</button>'
+    + (j.status === 'active' ? '<button class="btn btn-sm" style="background:#f0fdf4;border-color:#86efac;color:#15803d" onclick="markJobComplete(' + activeActualsJob + ')">✓ Mark complete</button>' : '')
+    + (j.status === 'complete' ? '<span style="background:#f0fdf4;border:1px solid #86efac;color:#15803d;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:500">✓ Complete</span>' : '')
+    + '</div></div>';
+
+  // Health banners
+  const months_j = getMonths(j.start, j.dur);
+  const lastMonth_j = months_j[months_j.length - 1];
+  const bilSum = getSummary(j, 'billing');
+  const labSum = getSummary(j, 'labour'), matSum = getSummary(j, 'materials'), ovhSum = getSummary(j, 'overhead');
+  const remCosts = labSum.balance + matSum.balance + ovhSum.balance;
+  let banners = '';
+  if (lastMonth_j < cur && bilSum.balance > 0) {
+    banners += '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:12px;color:#dc2626">'
+      + '<strong>⚠ Billing overrun:</strong> Job ended ' + monthLabel(lastMonth_j) + ' but ' + fmt(bilSum.balance) + ' is still to bill. '
+      + 'Extend the duration in job details to keep this in the forecast, or raise a final invoice and mark complete.'
+      + '</div>';
+  }
+  if (bilSum.balance < bilSum.originalTotal * 0.02 && remCosts > 50 && j.status !== 'complete') {
+    banners += '<div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:12px;color:#a16207">'
+      + '<strong>⚠ Billing appears complete</strong> but ' + fmt(remCosts) + ' costs are still forecast. '
+      + 'If the job is finished, click <strong>Mark complete</strong> above to remove these from the forecast.'
+      + '</div>';
+  }
 
   // Balance strip
   let bal = '<div class="balance-strip">';
@@ -1898,7 +1962,7 @@ function renderActualsSection() {
     + '<td class="' + (tB-tC>=0?'green':'red') + '">' + (tB-tC>=0?'+':'') + fmt(tB-tC) + '</td><td></td>'
     + '</tr>';
 
-  el.innerHTML = pills + jobHeader + bal + chartSection + legend + tbl + '</tbody></table></div>';
+  el.innerHTML = pills + jobHeader + banners + bal + chartSection + legend + tbl + '</tbody></table></div>';
 
   // Render chart after DOM is set
   const actCtx = document.getElementById('actualsChart');

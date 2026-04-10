@@ -1827,6 +1827,36 @@ function renderActualsSection() {
     + '<span><span class="badge badge-forecast" style="margin-right:4px">original forecast</span> Even spread, no actuals yet</span>'
     + '</div>';
 
+  // Chart data — original forecast vs actual per month
+  const chartMonths = months;
+  const origFcL = j.labour / j.dur;
+  const origFcM = j.materials / j.dur;
+  const origFcO = j.overhead / j.dur;
+  const origFcB = j.contract * (1 - j.retention / 100) / j.dur;
+  const chartFcCost  = chartMonths.map(() => Math.round(origFcL + origFcM + origFcO));
+  const chartActCost = chartMonths.map(m => {
+    const a = j.actuals[m];
+    if (!a || (a.labour === undefined && a.materials === undefined && a.overhead === undefined)) return null;
+    return Math.round((a.labour||0) + (a.materials||0) + (a.overhead||0));
+  });
+  const chartFcBil  = chartMonths.map(() => Math.round(origFcB));
+  const chartActBil = chartMonths.map(m => {
+    const a = j.actuals[m];
+    if (!a || a.billing === undefined) return null;
+    return Math.round(a.billing||0);
+  });
+
+  const chartSection = '<div class="card" style="padding:1rem 1.25rem;margin-bottom:1rem">'
+    + '<div style="font-size:13px;font-weight:500;margin-bottom:.75rem;color:#1a1a1a">Forecast vs actual</div>'
+    + '<div style="display:flex;gap:16px;font-size:12px;color:#888;margin-bottom:.5rem;flex-wrap:wrap">'
+    + '<span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:2px;background:#dc2626;display:inline-block"></span>Forecast costs</span>'
+    + '<span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:3px;border-top:2px dashed #dc2626;display:inline-block"></span>Actual costs</span>'
+    + '<span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:2px;background:#16a34a;display:inline-block"></span>Forecast billing</span>'
+    + '<span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:3px;border-top:2px dashed #16a34a;display:inline-block"></span>Actual billing</span>'
+    + '</div>'
+    + '<div style="position:relative;height:220px"><canvas id="actualsChart"></canvas></div>'
+    + '</div>';
+
   let tbl = '<div class="card" style="padding:0;overflow:hidden"><table><thead><tr>'
     + '<th>Month</th><th>Labour</th><th>Materials</th><th>Overhead</th><th>Total cost</th><th>Billing recv.</th><th>Cashflow</th><th>Type</th>'
     + '</tr></thead><tbody>';
@@ -1867,7 +1897,32 @@ function renderActualsSection() {
     + '<td class="' + (tB-tC>=0?'green':'red') + '">' + (tB-tC>=0?'+':'') + fmt(tB-tC) + '</td><td></td>'
     + '</tr>';
 
-  el.innerHTML = pills + jobHeader + bal + legend + tbl + '</tbody></table></div>';
+  el.innerHTML = pills + jobHeader + bal + chartSection + legend + tbl + '</tbody></table></div>';
+
+  // Render chart after DOM is set
+  const actCtx = document.getElementById('actualsChart');
+  if (actCtx) {
+    new Chart(actCtx.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: chartMonths.map(monthLabel),
+        datasets: [
+          { label: 'Forecast costs',   data: chartFcCost,  borderColor: '#dc2626', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, tension: 0.3 },
+          { label: 'Actual costs',     data: chartActCost, borderColor: '#dc2626', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3, tension: 0.3, borderDash: [5,3], spanGaps: false },
+          { label: 'Forecast billing', data: chartFcBil,   borderColor: '#16a34a', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, tension: 0.3 },
+          { label: 'Actual billing',   data: chartActBil,  borderColor: '#16a34a', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3, tension: 0.3, borderDash: [5,3], spanGaps: false }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { ticks: { callback: v => '\u00a3'+(Math.abs(v)>=1000?(v/1000).toFixed(0)+'k':v), font:{size:11} }, grid:{color:'#f0f0f0'} },
+          x: { ticks: { font:{size:11}, maxRotation: months.length > 12 ? 45 : 0 }, grid:{display:false} }
+        }
+      }
+    });
+  }
 }
 
 // ── Forecast ──────────────────────────────────────────────────────────────────

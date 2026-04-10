@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Roofing Forecast</title>
+<title>Roofing Forecast v2</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -997,9 +997,9 @@ function renderLiabilitiesSection() {
     uniqCats.forEach(c => {
       const catTotal = liabilities.filter(l => l.category === c && getLiabMonths(l).has(m)).reduce((s, l) => s + l.amount, 0);
       rowTotal += catTotal;
-      html += `<td>${catTotal > 0 ? fmt(catTotal) : '<span style="color:#ccc">—</span>'}</td>`;
+      html += '<td>' + (catTotal > 0 ? fmt(catTotal) : '<span style="color:#ccc">—</span>') + '</td>';
     });
-    html += `<td class="red" style="font-weight:600">${rowTotal > 0 ? fmt(rowTotal) : '<span style="color:#ccc">—</span>'}</td></tr>`;
+    html += '<td class="red" style="font-weight:600">' + (rowTotal > 0 ? fmt(rowTotal) : '<span style="color:#ccc">—</span>') + '</td></tr>';
   }
   html += '</tbody></table></div>';
   el.innerHTML = html;
@@ -1352,45 +1352,37 @@ function handleCsvImport(input) {
 }
 
 function showImportPreview(rows) {
-  const validCount = rows.filter(r => r.valid).length;
-  const invalidCount = rows.length - validCount;
-  let html = `<div style="margin-bottom:1rem;font-size:13px">
-    <span style="color:#16a34a;font-weight:500">${validCount} row${validCount!==1?'s':''} ready to import</span>
-    ${invalidCount > 0 ? `&nbsp;|&nbsp; <span style="color:#dc2626">${invalidCount} with errors (will be skipped)</span>` : ''}
-  </div>
-  <div style="overflow-x:auto;max-height:400px;overflow-y:auto">
-  <table style="font-size:12px;width:100%;border-collapse:collapse">
-  <thead style="position:sticky;top:0;background:#f0f0f0">
-    <tr>
-      <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd"></th>
-      <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Job ref</th>
-      <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Client</th>
-      <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Project</th>
-      <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Start</th>
-      <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Months</th>
-      <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Contract</th>
-      <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Labour</th>
-      <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Materials</th>
-      <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Overhead</th>
-      <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd">Issues</th>
-    </tr>
-  </thead><tbody>`;
-  rows.forEach(r => {
-    const bg = r.valid ? '' : 'background:#fef2f2';
-    const icon = r.valid ? '<span style="color:#16a34a;font-weight:600">✓</span>' : '<span style="color:#dc2626;font-weight:600">✗</span>';
-    html += `<tr style="${bg};border-bottom:1px solid #f0f0f0">
-      <td style="padding:5px 8px">${icon}</td>
-      <td style="padding:5px 8px;font-weight:500">${r.jobRef||'—'}</td>
-      <td style="padding:5px 8px">${r.client||'—'}</td>
-      <td style="padding:5px 8px">${r.projectName||'—'}</td>
-      <td style="padding:5px 8px">${r.start ? monthLabel(r.start) : '—'}</td>
-      <td style="padding:5px 8px">${r.dur||'—'}</td>
-      <td style="padding:5px 8px">£${(r.contract||0).toLocaleString('en-GB')}</td>
-      <td style="padding:5px 8px">£${(r.labour||0).toLocaleString('en-GB')}</td>
-      <td style="padding:5px 8px">£${(r.materials||0).toLocaleString('en-GB')}</td>
-      <td style="padding:5px 8px">£${(r.overhead||0).toLocaleString('en-GB')}</td>
-      <td style="padding:5px 8px;color:#dc2626;font-size:11px">${r.errors.join(', ')}</td>
-    </tr>`;
+  var validCount = rows.filter(function(r){return r.valid;}).length;
+  var invalidCount = rows.length - validCount;
+  var html = '<div style="margin-bottom:1rem;font-size:13px">'
+    + '<span style="color:#16a34a;font-weight:500">' + validCount + ' row(s) ready to import</span>'
+    + (invalidCount > 0 ? '&nbsp;|&nbsp; <span style="color:#dc2626">' + invalidCount + ' with errors (will be skipped)</span>' : '')
+    + '</div>'
+    + '<div style="overflow-x:auto;max-height:400px;overflow-y:auto">'
+    + '<table style="font-size:12px;width:100%;border-collapse:collapse">'
+    + '<thead style="position:sticky;top:0;background:#f0f0f0"><tr>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd"></th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Job ref</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Project</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Client</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Start</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Dur</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Contract</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Issues</th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(r) {
+    var bg = r.valid ? '' : 'background:#fef2f2';
+    var icon = r.valid ? '<span style="color:#16a34a;font-weight:600">&#10003;</span>' : '<span style="color:#dc2626;font-weight:600">&#10007;</span>';
+    html += '<tr style="' + bg + ';border-bottom:1px solid #f0f0f0">'
+      + '<td style="padding:5px 8px">' + icon + '</td>'
+      + '<td style="padding:5px 8px;font-weight:500">' + (r.jobRef||'') + '</td>'
+      + '<td style="padding:5px 8px">' + (r.projectName||'') + '</td>'
+      + '<td style="padding:5px 8px">' + (r.client||'') + '</td>'
+      + '<td style="padding:5px 8px">' + (r.start ? monthLabel(r.start) : '') + '</td>'
+      + '<td style="padding:5px 8px">' + (r.dur||'') + '</td>'
+      + '<td style="padding:5px 8px">' + (r.contract ? fmt(r.contract) : '') + '</td>'
+      + '<td style="padding:5px 8px;color:#dc2626;font-size:11px">' + r.errors.join(', ') + '</td>'
+      + '</tr>';
   });
   html += '</tbody></table></div>';
   document.getElementById('import-preview-content').innerHTML = html;
@@ -1434,7 +1426,7 @@ async function confirmImport() {
     jobs.push(job);
     await dbSave(job);
   }
-  setSaving(`Imported ${validRows.length} job${validRows.length!==1?'s':''} ✓`);
+  setSaving('Imported ' + validRows.length + ' job' + (validRows.length!==1?'s':'') + ' ✓');
   setTimeout(() => setSaving(''), 3000);
   renderAll();
 }
@@ -1490,39 +1482,35 @@ function handleLiabCsvImport(input) {
 }
 
 function showLiabImportPreview(rows) {
-  const validCount   = rows.filter(r => r.valid).length;
-  const invalidCount = rows.length - validCount;
-  let html = `<div style="margin-bottom:1rem;font-size:13px">
-    <span style="color:#16a34a;font-weight:500">${validCount} row${validCount!==1?'s':''} ready to import</span>
-    ${invalidCount > 0 ? `&nbsp;|&nbsp; <span style="color:#dc2626">${invalidCount} with errors (will be skipped)</span>` : ''}
-  </div>
-  <div style="overflow-x:auto;max-height:400px;overflow-y:auto">
-  <table style="font-size:12px;width:100%;border-collapse:collapse">
-  <thead style="position:sticky;top:0;background:#f0f0f0">
-    <tr>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd"></th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Name</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Category</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Monthly £</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Start</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Duration</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Notes</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Issues</th>
-    </tr>
-  </thead><tbody>`;
-  rows.forEach(r => {
-    const bg   = r.valid ? '' : 'background:#fef2f2';
-    const icon = r.valid ? '<span style="color:#16a34a;font-weight:600">✓</span>' : '<span style="color:#dc2626;font-weight:600">✗</span>';
-    html += `<tr style="${bg};border-bottom:1px solid #f0f0f0">
-      <td style="padding:5px 8px">${icon}</td>
-      <td style="padding:5px 8px;font-weight:500">${r.name||'—'}</td>
-      <td style="padding:5px 8px">${LIAB_CAT_LABELS[r.category]||r.category}</td>
-      <td style="padding:5px 8px">£${(r.amount||0).toLocaleString('en-GB')}</td>
-      <td style="padding:5px 8px">${r.start ? monthLabel(r.start) : '—'}</td>
-      <td style="padding:5px 8px">${r.ongoing ? 'Ongoing' : (r.dur ? r.dur + ' months' : '—')}</td>
-      <td style="padding:5px 8px;color:#888">${r.notes||'—'}</td>
-      <td style="padding:5px 8px;color:#dc2626;font-size:11px">${r.errors.join(', ')}</td>
-    </tr>`;
+  var validCount = rows.filter(function(r){return r.valid;}).length;
+  var invalidCount = rows.length - validCount;
+  var html = '<div style="margin-bottom:1rem;font-size:13px">'
+    + '<span style="color:#16a34a;font-weight:500">' + validCount + ' row(s) ready to import</span>'
+    + (invalidCount > 0 ? '&nbsp;|&nbsp; <span style="color:#dc2626">' + invalidCount + ' with errors (will be skipped)</span>' : '')
+    + '</div>'
+    + '<div style="overflow-x:auto;max-height:400px;overflow-y:auto">'
+    + '<table style="font-size:12px;width:100%;border-collapse:collapse">'
+    + '<thead style="position:sticky;top:0;background:#f0f0f0"><tr>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd"></th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Name</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Category</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Monthly</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Start</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Duration</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Issues</th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(r) {
+    var bg = r.valid ? '' : 'background:#fef2f2';
+    var icon = r.valid ? '<span style="color:#16a34a;font-weight:600">&#10003;</span>' : '<span style="color:#dc2626;font-weight:600">&#10007;</span>';
+    html += '<tr style="' + bg + ';border-bottom:1px solid #f0f0f0">'
+      + '<td style="padding:5px 8px">' + icon + '</td>'
+      + '<td style="padding:5px 8px;font-weight:500">' + (r.name||'') + '</td>'
+      + '<td style="padding:5px 8px">' + (r.category||'') + '</td>'
+      + '<td style="padding:5px 8px">' + (r.amount ? fmt(r.amount) : '') + '</td>'
+      + '<td style="padding:5px 8px">' + (r.start ? monthLabel(r.start) : '') + '</td>'
+      + '<td style="padding:5px 8px">' + (r.ongoing ? 'Ongoing' : (r.dur||'')) + '</td>'
+      + '<td style="padding:5px 8px;color:#dc2626;font-size:11px">' + r.errors.join(', ') + '</td>'
+      + '</tr>';
   });
   html += '</tbody></table></div>';
   document.getElementById('import-preview-content').innerHTML = html;
@@ -1541,7 +1529,7 @@ async function confirmLiabImport() {
     liabilities.push(liab);
     await dbSaveLiab(liab);
   }
-  setSaving(`Imported ${validRows.length} liabilit${validRows.length!==1?'ies':'y'} ✓`);
+  setSaving('Imported ' + validRows.length + ' liabilit' + (validRows.length!==1?'ies':'y') + ' ✓');
   setTimeout(() => setSaving(''), 3000);
   liabImportRows = [];
   renderAll();
@@ -1594,39 +1582,33 @@ function handleCreditsCsvImport(input) {
 }
 
 function showCreditsImportPreview(rows) {
-  const validCount   = rows.filter(r => r.valid).length;
-  const invalidCount = rows.length - validCount;
-  let html = `<div style="margin-bottom:1rem;font-size:13px">
-    <span style="color:#16a34a;font-weight:500">${validCount} row${validCount!==1?'s':''} ready to import</span>
-    ${invalidCount > 0 ? `&nbsp;|&nbsp; <span style="color:#dc2626">${invalidCount} with errors (will be skipped)</span>` : ''}
-  </div>
-  <div style="overflow-x:auto;max-height:400px;overflow-y:auto">
-  <table style="font-size:12px;width:100%;border-collapse:collapse">
-  <thead style="position:sticky;top:0;background:#f0f0f0">
-    <tr>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd"></th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Description</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Category</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Amount</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Expected</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Ref</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Notes</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Issues</th>
-    </tr>
-  </thead><tbody>`;
-  rows.forEach(r => {
-    const bg   = r.valid ? '' : 'background:#fef2f2';
-    const icon = r.valid ? '<span style="color:#16a34a;font-weight:600">✓</span>' : '<span style="color:#dc2626;font-weight:600">✗</span>';
-    html += `<tr style="${bg};border-bottom:1px solid #f0f0f0">
-      <td style="padding:5px 8px">${icon}</td>
-      <td style="padding:5px 8px;font-weight:500">${r.name||'—'}</td>
-      <td style="padding:5px 8px">${CREDIT_CAT_LABELS[r.category]||r.category}</td>
-      <td style="padding:5px 8px">£${(r.amount||0).toLocaleString('en-GB')}</td>
-      <td style="padding:5px 8px">${r.expectedMonth ? monthLabel(r.expectedMonth) : '—'}</td>
-      <td style="padding:5px 8px;color:#888">${r.ref||'—'}</td>
-      <td style="padding:5px 8px;color:#888">${r.notes||'—'}</td>
-      <td style="padding:5px 8px;color:#dc2626;font-size:11px">${r.errors.join(', ')}</td>
-    </tr>`;
+  var validCount = rows.filter(function(r){return r.valid;}).length;
+  var invalidCount = rows.length - validCount;
+  var html = '<div style="margin-bottom:1rem;font-size:13px">'
+    + '<span style="color:#16a34a;font-weight:500">' + validCount + ' row(s) ready to import</span>'
+    + (invalidCount > 0 ? '&nbsp;|&nbsp; <span style="color:#dc2626">' + invalidCount + ' with errors (will be skipped)</span>' : '')
+    + '</div>'
+    + '<div style="overflow-x:auto;max-height:400px;overflow-y:auto">'
+    + '<table style="font-size:12px;width:100%;border-collapse:collapse">'
+    + '<thead style="position:sticky;top:0;background:#f0f0f0"><tr>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd"></th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Description</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Category</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Amount</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Expected</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Issues</th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(r) {
+    var bg = r.valid ? '' : 'background:#fef2f2';
+    var icon = r.valid ? '<span style="color:#16a34a;font-weight:600">&#10003;</span>' : '<span style="color:#dc2626;font-weight:600">&#10007;</span>';
+    html += '<tr style="' + bg + ';border-bottom:1px solid #f0f0f0">'
+      + '<td style="padding:5px 8px">' + icon + '</td>'
+      + '<td style="padding:5px 8px;font-weight:500">' + (r.name||'') + '</td>'
+      + '<td style="padding:5px 8px">' + (CREDIT_CAT_LABELS[r.category]||r.category) + '</td>'
+      + '<td style="padding:5px 8px">' + (r.amount ? fmt(r.amount) : '') + '</td>'
+      + '<td style="padding:5px 8px">' + (r.expectedMonth ? monthLabel(r.expectedMonth) : '') + '</td>'
+      + '<td style="padding:5px 8px;color:#dc2626;font-size:11px">' + r.errors.join(', ') + '</td>'
+      + '</tr>';
   });
   html += '</tbody></table></div>';
   document.getElementById('import-preview-content').innerHTML = html;
@@ -1649,7 +1631,7 @@ async function confirmCreditsImport() {
     credits.push(credit);
     await dbSaveCredit(credit);
   }
-  setSaving(`Imported ${validRows.length} credit${validRows.length!==1?'s':''} ✓`);
+  setSaving('Imported ' + validRows.length + ' credit' + (validRows.length!==1?'s':'') + ' ✓');
   setTimeout(() => setSaving(''), 3000);
   creditsImportRows = [];
   renderAll();
@@ -1704,39 +1686,37 @@ function handleActualsCsvImport(input) {
 }
 
 function showActualsImportPreview(rows) {
-  const validCount = rows.filter(r => r.valid).length;
-  const invalidCount = rows.length - validCount;
-  let html = `<div style="margin-bottom:1rem;font-size:13px">
-    <span style="color:#16a34a;font-weight:500">${validCount} row${validCount!==1?'s':''} ready to import</span>
-    ${invalidCount > 0 ? `&nbsp;|&nbsp; <span style="color:#dc2626">${invalidCount} with errors (will be skipped)</span>` : ''}
-  </div>
-  <div style="overflow-x:auto;max-height:400px;overflow-y:auto">
-  <table style="font-size:12px;width:100%;border-collapse:collapse">
-  <thead style="position:sticky;top:0;background:#f0f0f0">
-    <tr>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd"></th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Job ref</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Month</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Billing received</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Labour</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Overhead</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Materials</th>
-      <th style="padding:6px 8px;border-bottom:1px solid #ddd">Issues</th>
-    </tr>
-  </thead><tbody>`;
-  rows.forEach(r => {
-    const bg = r.valid ? '' : 'background:#fef2f2';
-    const icon = r.valid ? '<span style="color:#16a34a;font-weight:600">✓</span>' : '<span style="color:#dc2626;font-weight:600">✗</span>';
-    html += `<tr style="${bg};border-bottom:1px solid #f0f0f0">
-      <td style="padding:5px 8px">${icon}</td>
-      <td style="padding:5px 8px;font-weight:500">${r.jobRef||'—'}</td>
-      <td style="padding:5px 8px">${r.month ? monthLabel(r.month) : '—'}</td>
-      <td style="padding:5px 8px">£${(r.billing||0).toLocaleString('en-GB')}</td>
-      <td style="padding:5px 8px">£${(r.labour||0).toLocaleString('en-GB')}</td>
-      <td style="padding:5px 8px">£${(r.overhead||0).toLocaleString('en-GB')}</td>
-      <td style="padding:5px 8px">£${(r.materials||0).toLocaleString('en-GB')}</td>
-      <td style="padding:5px 8px;color:#dc2626;font-size:11px">${r.errors.join(', ')}</td>
-    </tr>`;
+  var validCount = rows.filter(function(r){return r.valid;}).length;
+  var invalidCount = rows.length - validCount;
+  var html = '<div style="margin-bottom:1rem;font-size:13px">'
+    + '<span style="color:#16a34a;font-weight:500">' + validCount + ' row(s) ready to import</span>'
+    + (invalidCount > 0 ? '&nbsp;|&nbsp; <span style="color:#dc2626">' + invalidCount + ' with errors (will be skipped)</span>' : '')
+    + '</div>'
+    + '<div style="overflow-x:auto;max-height:400px;overflow-y:auto">'
+    + '<table style="font-size:12px;width:100%;border-collapse:collapse">'
+    + '<thead style="position:sticky;top:0;background:#f0f0f0"><tr>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd"></th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Job ref</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Month</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Billing received</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Labour</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Overhead</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Materials</th>'
+    + '<th style="padding:6px 8px;border-bottom:1px solid #ddd">Issues</th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(r) {
+    var bg = r.valid ? '' : 'background:#fef2f2';
+    var icon = r.valid ? '<span style="color:#16a34a;font-weight:600">&#10003;</span>' : '<span style="color:#dc2626;font-weight:600">&#10007;</span>';
+    html += '<tr style="' + bg + ';border-bottom:1px solid #f0f0f0">'
+      + '<td style="padding:5px 8px">' + icon + '</td>'
+      + '<td style="padding:5px 8px;font-weight:500">' + (r.jobRef||'') + '</td>'
+      + '<td style="padding:5px 8px">' + (r.month ? monthLabel(r.month) : '') + '</td>'
+      + '<td style="padding:5px 8px">' + (r.billing||0).toLocaleString('en-GB', {style:'currency',currency:'GBP',maximumFractionDigits:0}) + '</td>'
+      + '<td style="padding:5px 8px">' + (r.labour||0).toLocaleString('en-GB', {style:'currency',currency:'GBP',maximumFractionDigits:0}) + '</td>'
+      + '<td style="padding:5px 8px">' + (r.overhead||0).toLocaleString('en-GB', {style:'currency',currency:'GBP',maximumFractionDigits:0}) + '</td>'
+      + '<td style="padding:5px 8px">' + (r.materials||0).toLocaleString('en-GB', {style:'currency',currency:'GBP',maximumFractionDigits:0}) + '</td>'
+      + '<td style="padding:5px 8px;color:#dc2626;font-size:11px">' + r.errors.join(', ') + '</td>'
+      + '</tr>';
   });
   html += '</tbody></table></div>';
   document.getElementById('import-preview-content').innerHTML = html;
@@ -1767,7 +1747,7 @@ async function confirmActualsImport() {
     });
     await dbSave(j);
   }
-  setSaving(`Imported actuals for ${Object.keys(jobUpdates).length} job${Object.keys(jobUpdates).length!==1?'s':''} ✓`);
+  setSaving('Imported actuals for ' + Object.keys(jobUpdates).length + ' job' + (Object.keys(jobUpdates).length!==1?'s':'') + ' ✓');
   setTimeout(() => setSaving(''), 3000);
   actualsImportRows = [];
   renderAll();
@@ -1800,18 +1780,16 @@ function renderActualsSection() {
   const jobHeader = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:10px">
       <div>
-        <div style="font-size:16px;font-weight:600">${j.name}${j.projectName ? ` — ${j.projectName}` : ''}</div>
-        ${j.client ? `<div style="font-size:13px;color:#888;margin-top:2px">${j.client}</div>` : ''}
+        <div style="font-size:16px;font-weight:600">${j.name}${j.projectName ? ' \u2014 ' + j.projectName : ''}</div>
+        ${j.client ? '<div style="font-size:13px;color:#888;margin-top:2px">'+j.client+'</div>' : ''}
       </div>
       <button class="btn btn-sm" onclick="editJob(${activeActualsJob})">Edit job details</button>
     </div>
     ${(() => {
       const preStart = credits.filter(c => c.category==='deposit' && c.linkedJobRef===j.name && c.received && c.receivedMonth < j.start);
       if (!preStart.length) return '';
-      return `<div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:8px;padding:8px 14px;margin-bottom:1rem;font-size:12px;color:#1d4ed8">
-        <strong>Pre-start deposit${preStart.length>1?'s':''} received:</strong>
-        ${preStart.map(c=>`${c.name} — ${fmt(c.amount)} received ${monthLabel(c.receivedMonth)}, recorded against ${monthLabel(j.start)} (project start)`).join(' &nbsp;|&nbsp; ')}
-      </div>`;
+      const items = preStart.map(c => c.name + ' — ' + fmt(c.amount) + ' received ' + monthLabel(c.receivedMonth) + ', recorded against ' + monthLabel(j.start) + ' (project start)').join(' &nbsp;|&nbsp; ');
+      return '<div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:8px;padding:8px 14px;margin-bottom:1rem;font-size:12px;color:#1d4ed8"><strong>Pre-start deposit' + (preStart.length>1?'s':'') + ' received:</strong> ' + items + '</div>';
     })()}`;
 
   // Balance strip
@@ -1873,7 +1851,7 @@ function renderActualsSection() {
       <div class="balance-box-val ${marginCls}">${actMargin !== null ? fmtPct(actMargin) : '—'}</div>
       <div style="font-size:11px;color:#888;margin-top:2px">
         ${actMargin !== null
-          ? `Billing ${fmt(actBilling)} minus costs ${fmt(actCost)}`
+          ? 'Billing ' + fmt(actBilling) + ' minus costs ' + fmt(actCost)
           : 'No actuals entered yet'}
       </div>
     </div>
@@ -1887,6 +1865,9 @@ function renderActualsSection() {
       </div>
     </div>
   </div>`;
+
+  el.innerHTML = pills + jobHeader + bal;
+}
 
 // ── Forecast ──────────────────────────────────────────────────────────────────
 function getForecastMonths() {

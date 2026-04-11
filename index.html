@@ -159,6 +159,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.11-Apr-25-16:40</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -1860,17 +1861,18 @@ async function markJobComplete(idx) {
   const closedMonths = effectiveMths.filter(m => m < cur);
   const finalMonth = closedMonths[closedMonths.length - 1];
 
+  console.log('markJobComplete:', j.name, 'cur:', cur, 'finalMonth:', finalMonth, 'effectiveMths:', effectiveMths);
+
   if (finalMonth) {
     const existing = j.actuals[finalMonth] || {};
     const hasAllActuals = ['labour','materials','overhead','billing'].every(f => existing[f] !== undefined);
+    console.log('hasAllActuals:', hasAllActuals, 'existing:', existing);
 
     if (!hasAllActuals) {
-      // Open the final actuals modal
       _completeJobIdx = idx;
       _completeFinalMonth = finalMonth;
       document.getElementById('complete-modal-desc').textContent =
         'Enter final actuals for ' + j.name + (j.projectName ? ' — ' + j.projectName : '') + ' (' + monthLabel(finalMonth) + ')';
-      // Pre-fill any existing values
       document.getElementById('cm-labour').value   = existing.labour    !== undefined ? existing.labour    : '';
       document.getElementById('cm-materials').value = existing.materials !== undefined ? existing.materials : '';
       document.getElementById('cm-overhead').value  = existing.overhead  !== undefined ? existing.overhead  : '';
@@ -1880,7 +1882,6 @@ async function markJobComplete(idx) {
     }
   }
 
-  // All actuals present — just confirm and complete
   if (!confirm('Mark "' + j.name + '" as complete? Remaining cost forecast will be removed. Billing balance stays until invoiced.')) return;
   j.status = 'complete';
   renderAll();

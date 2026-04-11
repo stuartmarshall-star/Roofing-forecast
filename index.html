@@ -159,7 +159,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.11-Apr-25-16:40</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.12-Apr-25-17:10</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -389,7 +389,7 @@
     <div class="modal-title">Complete job — final actuals</div>
     <div style="font-size:13px;color:#555;margin-bottom:1rem" id="complete-modal-desc"></div>
     <div style="background:#fef9c3;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:12px;color:#a16207">
-      Enter the final figures for the last month. Enter <strong>0</strong> for anything that is nil — all four fields are required.
+      Review and confirm the final figures. Existing values are pre-filled — amend any that need updating. Enter <strong>0</strong> for nil. All four fields required.
     </div>
     <div class="form-grid">
       <div><label>Labour (£)</label><input type="number" id="cm-labour" placeholder="0" min="0"></div>
@@ -1858,42 +1858,40 @@ async function markJobComplete(idx) {
   const j = jobs[idx];
   const cur = getCurrentMonth();
   const effectiveMths = getEffectiveMonths(j);
-  // Include current month — that's where final costs and billing sit
   const closedMonths = effectiveMths.filter(m => m <= cur);
   const finalMonth = closedMonths[closedMonths.length - 1];
 
   if (finalMonth) {
+    // Always show the final actuals modal — pre-fill with existing values so user can review/amend
+    _completeJobIdx = idx;
+    _completeFinalMonth = finalMonth;
     const existing = j.actuals[finalMonth] || {};
-    const hasAllActuals = ['labour','materials','overhead','billing'].every(f => existing[f] !== undefined);
-
-    if (!hasAllActuals) {
-      _completeJobIdx = idx;
-      _completeFinalMonth = finalMonth;
-      document.getElementById('complete-modal-desc').textContent =
-        'Enter final actuals for ' + j.name + (j.projectName ? ' — ' + j.projectName : '') + ' (' + monthLabel(finalMonth) + ')';
-      document.getElementById('cm-labour').value   = existing.labour    !== undefined ? existing.labour    : '';
-      document.getElementById('cm-materials').value = existing.materials !== undefined ? existing.materials : '';
-      document.getElementById('cm-overhead').value  = existing.overhead  !== undefined ? existing.overhead  : '';
-      document.getElementById('cm-billing').value   = existing.billing   !== undefined ? existing.billing   : '';
-      document.getElementById('complete-modal-backdrop').classList.add('open');
-      return;
-    }
+    document.getElementById('complete-modal-desc').textContent =
+      'Review and confirm final actuals for ' + j.name + (j.projectName ? ' \u2014 ' + j.projectName : '') + ' (' + monthLabel(finalMonth) + ')';
+    document.getElementById('cm-labour').value   = existing.labour    !== undefined ? existing.labour    : '';
+    document.getElementById('cm-materials').value = existing.materials !== undefined ? existing.materials : '';
+    document.getElementById('cm-overhead').value  = existing.overhead  !== undefined ? existing.overhead  : '';
+    document.getElementById('cm-billing').value   = existing.billing   !== undefined ? existing.billing   : '';
+    document.getElementById('complete-modal-backdrop').classList.add('open');
+    return;
   }
 
-  if (!confirm('Mark "' + j.name + '" as complete? Remaining cost forecast will be removed. Billing balance stays until invoiced.')) return;
+  // No closed months at all — just confirm
+  if (!confirm('Mark "' + j.name + '" as complete? Remaining cost forecast will be removed.')) return;
   j.status = 'complete';
   renderAll();
   await dbSave(j);
 }
 
 async function submitComplete() {
-  const labVal = document.getElementById('cm-labour').value;
-  const matVal = document.getElementById('cm-materials').value;
-  const ovhVal = document.getElementById('cm-overhead').value;
-  const bilVal = document.getElementById('cm-billing').value;
+  const labVal = document.getElementById('cm-labour').value.trim();
+  const matVal = document.getElementById('cm-materials').value.trim();
+  const ovhVal = document.getElementById('cm-overhead').value.trim();
+  const bilVal = document.getElementById('cm-billing').value.trim();
 
-  if ([labVal, matVal, ovhVal, bilVal].some(v => v === '' || v === null)) {
-    alert('Please enter all four values. Enter 0 for any that are nil.');
+  // All four required — must enter something (0 is fine)
+  if ([labVal, matVal, ovhVal, bilVal].some(v => v === '')) {
+    alert('Please fill in all four fields. Enter 0 for anything that is nil.');
     return;
   }
 

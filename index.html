@@ -139,7 +139,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.20-Apr-11-09:55</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.21-Apr-11-10:15</div>
   </div>
 </div>
 
@@ -160,7 +160,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.20-Apr-11-09:55</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.21-Apr-11-10:15</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -1249,11 +1249,15 @@ function renderSummary() {
   let html = '';
 
   // Portfolio overview
+  const fcProfit = totalContract - totalCost;
+  const actProfit = totalActBilling > 0 ? totalActBilling - totalActCost : null;
   html += `<div style="font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Portfolio overview</div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:1.5rem">
     <div class="metric"><div class="metric-label">Total contracted value</div><div class="metric-value">${fmt(totalContract)}</div><div style="font-size:11px;color:#888;margin-top:2px">${jobs.length} jobs, ${activeJobs.length} active</div></div>
     <div class="metric"><div class="metric-label">Total forecast costs</div><div class="metric-value">${fmt(totalCost)}</div><div style="font-size:11px;color:#888;margin-top:2px">Labour + materials + overhead</div></div>
+    <div class="metric"><div class="metric-label">Forecast profit</div><div class="metric-value ${fcProfit >= 0 ? 'green' : 'red'}">${fmt(fcProfit)}</div><div style="font-size:11px;color:#888;margin-top:2px">Contract minus costs</div></div>
     <div class="metric"><div class="metric-label">Forecast margin</div><div class="metric-value ${fcMarginPct >= 15 ? 'green' : 'red'}">${fmtPct(fcMarginPct)}</div><div style="font-size:11px;color:#888;margin-top:2px">Whole portfolio</div></div>
+    <div class="metric"><div class="metric-label">Actual profit to date</div><div class="metric-value ${actProfit !== null ? (actProfit >= 0 ? 'green' : 'red') : ''}">${actProfit !== null ? fmt(actProfit) : '—'}</div><div style="font-size:11px;color:#888;margin-top:2px">${actProfit !== null ? 'Billing minus costs' : 'No actuals yet'}</div></div>
     <div class="metric"><div class="metric-label">Actual margin to date</div><div class="metric-value ${actMarginPct !== null ? (actMarginPct >= fcMarginPct ? 'green' : 'red') : ''}">${actMarginPct !== null ? fmtPct(actMarginPct) : '—'}</div><div style="font-size:11px;color:#888;margin-top:2px">${actMarginPct !== null ? (actMarginPct >= fcMarginPct ? 'Ahead of forecast' : 'Behind forecast') : 'No actuals yet'}</div></div>
     <div class="metric" style="cursor:pointer" onclick="showTab('retentions')"><div class="metric-label">Retention outstanding ↗</div><div class="metric-value red">${fmt(retOutstanding)}</div><div style="font-size:11px;color:#888;margin-top:2px">Held minus released</div></div>
   </div>`;
@@ -2191,6 +2195,23 @@ function renderActualsSection() {
     + '<td>' + fmt(tC) + '</td><td>' + fmt(tB) + '</td>'
     + '<td class="' + (tB-tC>=0?'green':'red') + '">' + (tB-tC>=0?'+':'') + fmt(tB-tC) + '</td><td></td>'
     + '</tr>';
+
+  // Average monthly billing — total actuals billing / months elapsed (including zero months)
+  const billedMonths = months.filter(m => m < cur);
+  if (billedMonths.length > 0) {
+    let totalActBil = 0;
+    billedMonths.forEach(m => { const a = j.actuals[m]; if (a && a.billing !== undefined) totalActBil += a.billing; });
+    const avgMonthlyBil = totalActBil / billedMonths.length;
+    const remainingBil = bs.balance;
+    const monthsNeeded = avgMonthlyBil > 0 ? Math.ceil(remainingBil / avgMonthlyBil) : '—';
+    tbl += '<tr style="background:#eff6ff;font-size:12px">'
+      + '<td style="color:#1d4ed8;font-weight:500" colspan="4">Avg monthly billing (' + billedMonths.length + ' months)</td>'
+      + '<td></td>'
+      + '<td style="color:#1d4ed8;font-weight:600">' + fmt(avgMonthlyBil) + '/mo</td>'
+      + '<td style="color:#888">' + (typeof monthsNeeded === 'number' ? monthsNeeded + ' more month' + (monthsNeeded !== 1 ? 's' : '') + ' to clear balance' : '—') + '</td>'
+      + '<td></td>'
+      + '</tr>';
+  }
 
   el.innerHTML = pills + jobHeader + banners + bal + chartSection + legend + tbl + '</tbody></table></div>';
 

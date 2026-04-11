@@ -159,7 +159,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.12-Apr-25-17:10</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.13-Apr-25-17:30</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -1290,7 +1290,7 @@ function renderSummary() {
       const ret = isEnd ? fmt(getRetentionTotal(u.j) / 2) + ' retention due' : '—';
       html += `<tr style="border-bottom:1px solid #f0f0f0">
         <td style="white-space:nowrap;font-weight:500">${monthLabel(u.month)}</td>
-        <td><strong>${u.j.name}</strong></td>
+        <td><strong>${u.j.name}</strong>${u.j.projectName ? '<div style="font-size:11px;color:#888">' + u.j.projectName + '</div>' : ''}</td>
         <td>${u.j.client||'—'}</td>
         <td>${badge}</td>
         <td>${fmt(u.j.contract)}</td>
@@ -2695,7 +2695,7 @@ function renderCreditsSection() {
     html += `<tr style="${bg};border-bottom:1px solid #f0f0f0">
       <td><strong>${c.name}</strong>${c.notes?`<div style="font-size:11px;color:#888">${c.notes}</div>`:''}  </td>
       <td>${catBadge}</td>
-      <td style="font-size:12px;color:#888">${c.linkedJobRef ? `<span style="color:#1d4ed8">${c.linkedJobRef}</span>` : '—'}</td>
+      <td style="font-size:12px;color:#888">${c.linkedJobRef ? (() => { const lj = jobs.find(j => j.name === c.linkedJobRef); return '<span style="color:#1d4ed8">' + c.linkedJobRef + (lj && lj.projectName ? ' · ' + lj.projectName : '') + '</span>'; })() : '—'}</td>
       <td style="white-space:nowrap">${c.expectedMonth ? monthLabel(c.expectedMonth) : '—'}</td>
       <td class="${c.received?'green':''}" style="font-weight:500">${c.received?'+':''}${fmt(c.amount)}</td>
       <td>${statusCell}</td>
@@ -3158,7 +3158,7 @@ function renderVarianceReport() {
     const marginCls = marginDiff >= 0 ? 'green' : 'red';
 
     html += `<tr>
-      <td><strong>${j.name}</strong>${j.client?`<div style="font-size:11px;color:#888">${j.client}</div>`:''}</td>
+      <td><strong>${j.name}</strong>${j.projectName ? '<div style="font-size:11px;color:#888">' + j.projectName + '</div>' : ''}${j.client?`<div style="font-size:11px;color:#888">${j.client}</div>`:''}</td>
       ${vCell(fcL, actL, false, true)}
       ${vCell(fcM, actM, false, true)}
       ${vCell(fcO, actO, false, true)}

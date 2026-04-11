@@ -139,7 +139,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.19-Apr-11-09:40</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.20-Apr-11-09:55</div>
   </div>
 </div>
 
@@ -160,7 +160,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.19-Apr-11-09:40</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.20-Apr-11-09:55</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -1336,49 +1336,83 @@ function renderJobsTable() {
   const el = document.getElementById('jobs');
   if (!jobs.length) { el.innerHTML = '<div class="empty-state">No jobs yet — click "+ Add job" to get started.</div>'; return; }
   const cur = getCurrentMonth();
-  let html = '<div class="card" style="padding:0;overflow:hidden;overflow-x:auto"><table><thead><tr><th>Job ref</th><th>Project</th><th>Client</th><th>Period</th><th>Contract</th><th>Labour</th><th>Materials</th><th>Overhead</th><th>Total cost</th><th>Margin</th><th>Progress</th><th>Status</th><th></th></tr></thead><tbody>';
-  let totContract=0, totLabour=0, totMaterials=0, totOverhead=0;
+
+  let html = '<div class="card" style="padding:0;overflow:hidden;overflow-x:auto"><table><thead><tr>'
+    + '<th>Job ref</th><th>Project</th><th>Client</th>'
+    + '<th>Labour</th><th>Materials</th><th>Overhead</th>'
+    + '<th>Contract</th><th>Profit</th><th>Margin</th>'
+    + '<th>Status</th><th></th>'
+    + '</tr></thead><tbody>';
+
+  let totContract=0, totLabour=0, totMaterials=0, totOverhead=0, totProfit=0;
+
   jobs.forEach((j, i) => {
-    const tc = j.labour + j.materials + j.overhead;
-    const margin = j.contract > 0 ? (j.contract - tc) / j.contract * 100 : 0;
-    const months = getMonths(j.start, j.dur);
-    const pct = Math.round(months.filter(m => m <= cur).length / j.dur * 100);
-    totContract += j.contract; totLabour += j.labour; totMaterials += j.materials; totOverhead += j.overhead;
-    html += `<tr>
-      <td><strong>${j.name}</strong></td>
-      <td>${j.projectName || '—'}</td>
-      <td>${j.client || '—'}</td>
-      <td style="white-space:nowrap">${monthLabel(j.start)} – ${monthLabel(months[months.length - 1])}</td>
-      <td>${fmt(j.contract)}</td>
-      <td>${fmt(j.labour)}</td>
-      <td>${fmt(j.materials)}</td>
-      <td>${fmt(j.overhead)}</td>
-      <td><strong>${fmt(tc)}</strong></td>
-      <td class="${margin >= 15 ? 'green' : 'red'}">${fmtPct(margin)}</td>
-      <td style="min-width:100px">
-        <div style="font-size:11px;color:#888">${pct}% through</div>
-        <div class="progress-bar-wrap"><div class="progress-bar" style="width:${Math.min(pct,100)}%;background:#16a34a"></div></div>
-      </td>
-      <td><span class="badge badge-${j.status}">${j.status}</span></td>
-      <td style="white-space:nowrap">
-        <button class="btn btn-sm" onclick="showTab('actuals');setActualsJob(${i})" style="margin-right:4px">Actuals</button>
-        <button class="btn btn-sm" onclick="editJob(${i})" style="margin-right:4px">Edit</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteJob(${i})">Del</button>
-      </td></tr>`;
+    // For complete jobs, use actuals where available
+    let labour, materials, overhead, contract;
+    if (j.status === 'complete') {
+      const months = getEffectiveMonths(j);
+      let actL=0, actM=0, actO=0, actB=0, hasActuals=false;
+      months.forEach(m => {
+        const a = j.actuals[m];
+        if (a) { actL += a.labour||0; actM += a.materials||0; actO += a.overhead||0; actB += a.billing||0; hasActuals = true; }
+      });
+      // Use actuals if entered, fall back to budget
+      labour    = hasActuals ? actL : j.labour;
+      materials = hasActuals ? actM : j.materials;
+      overhead  = hasActuals ? actO : j.overhead;
+      // Contract = total billed (actuals billing + retention still held)
+      const retHeld = hasActuals ? j.contract * j.retention / 100 : 0;
+      contract  = hasActuals ? actB + retHeld : j.contract;
+    } else {
+      labour    = j.labour;
+      materials = j.materials;
+      overhead  = j.overhead;
+      contract  = j.contract;
+    }
+
+    const tc     = labour + materials + overhead;
+    const profit = contract - tc;
+    const margin = contract > 0 ? profit / contract * 100 : 0;
+    const isComplete = j.status === 'complete';
+
+    totContract  += contract;
+    totLabour    += labour;
+    totMaterials += materials;
+    totOverhead  += overhead;
+    totProfit    += profit;
+
+    html += '<tr>'
+      + '<td><strong>' + j.name + '</strong></td>'
+      + '<td>' + (j.projectName||'—') + '</td>'
+      + '<td>' + (j.client||'—') + '</td>'
+      + '<td>' + fmt(labour) + (isComplete ? '<div style="font-size:10px;color:#6b7280">actual</div>' : '') + '</td>'
+      + '<td>' + fmt(materials) + (isComplete ? '<div style="font-size:10px;color:#6b7280">actual</div>' : '') + '</td>'
+      + '<td>' + fmt(overhead) + (isComplete ? '<div style="font-size:10px;color:#6b7280">actual</div>' : '') + '</td>'
+      + '<td>' + fmt(contract) + (isComplete ? '<div style="font-size:10px;color:#6b7280">actual</div>' : '') + '</td>'
+      + '<td class="' + (profit >= 0 ? 'green' : 'red') + '"><strong>' + fmt(profit) + '</strong></td>'
+      + '<td class="' + (margin >= 15 ? 'green' : 'red') + '">' + fmtPct(margin) + '</td>'
+      + '<td><span class="badge badge-' + j.status + '">' + j.status + '</span></td>'
+      + '<td style="white-space:nowrap">'
+      + '<button class="btn btn-sm" onclick="showTab(\'actuals\');setActualsJob(' + i + ')" style="margin-right:4px">Actuals</button>'
+      + '<button class="btn btn-sm" onclick="editJob(' + i + ')" style="margin-right:4px">Edit</button>'
+      + '<button class="btn btn-sm btn-danger" onclick="deleteJob(' + i + ')">Del</button>'
+      + '</td></tr>';
   });
+
   // Totals row
-  const totCost = totLabour + totMaterials + totOverhead;
-  const totMargin = totContract > 0 ? (totContract - totCost) / totContract * 100 : 0;
-  html += `<tr style="background:#f0f0f0;font-weight:600;border-top:2px solid #e0e0e0">
-    <td>Totals</td><td></td><td></td>
-    <td>${fmt(totContract)}</td>
-    <td>${fmt(totLabour)}</td>
-    <td>${fmt(totMaterials)}</td>
-    <td>${fmt(totOverhead)}</td>
-    <td>${fmt(totCost)}</td>
-    <td class="${totMargin >= 15 ? 'green' : 'red'}">${fmtPct(totMargin)}</td>
-    <td></td><td></td><td></td>
-  </tr>`;
+  const totCost   = totLabour + totMaterials + totOverhead;
+  const totMargin = totContract > 0 ? totProfit / totContract * 100 : 0;
+  html += '<tr style="background:#f0f0f0;font-weight:600;border-top:2px solid #e0e0e0">'
+    + '<td colspan="3">Totals</td>'
+    + '<td>' + fmt(totLabour) + '</td>'
+    + '<td>' + fmt(totMaterials) + '</td>'
+    + '<td>' + fmt(totOverhead) + '</td>'
+    + '<td>' + fmt(totContract) + '</td>'
+    + '<td class="' + (totProfit >= 0 ? 'green' : 'red') + '">' + fmt(totProfit) + '</td>'
+    + '<td class="' + (totMargin >= 15 ? 'green' : 'red') + '">' + fmtPct(totMargin) + '</td>'
+    + '<td></td><td></td>'
+    + '</tr>';
+
   el.innerHTML = html + '</tbody></table></div>';
 }
 

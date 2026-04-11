@@ -159,7 +159,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.13-Apr-25-17:30</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.14-Apr-25-18:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -1203,10 +1203,31 @@ function renderSummary() {
       const fcBil  = fcBpm * n;
       const costOverrun = actCost - fcCost;
       const billingBehind = fcBil - actBil;
-      if (costOverrun > fcCost * 0.05) risks.push({ type: 'cost', label: `Costs ${fmt(costOverrun)} over prorated forecast`, severity: costOverrun > fcCost * 0.15 ? 'high' : 'medium' });
-      if (billingBehind > fcBil * 0.1)  risks.push({ type: 'billing', label: `Billing ${fmt(billingBehind)} behind prorated forecast`, severity: billingBehind > fcBil * 0.2 ? 'high' : 'medium' });
-      const actMargin = actBil > 0 ? (actBil - actCost) / actBil * 100 : 0;
-      if (actBil > 0 && actMargin < 15) risks.push({ type: 'margin', label: `Actual margin ${fmtPct(actMargin)} — below 15% threshold`, severity: actMargin < 5 ? 'high' : 'medium' });
+      if (costOverrun > fcCost * 0.05) risks.push({ type: 'cost', label: 'Costs ' + fmt(costOverrun) + ' over prorated forecast', severity: costOverrun > fcCost * 0.15 ? 'high' : 'medium' });
+      if (billingBehind > fcBil * 0.1)  risks.push({ type: 'billing', label: 'Billing ' + fmt(billingBehind) + ' behind prorated forecast', severity: billingBehind > fcBil * 0.2 ? 'high' : 'medium' });
+
+      // ── Billing recovery check ───────────────────────────────────────────────
+      // Compare actual billing to actual costs — if billing is behind costs, cash flow is at risk
+      // regardless of overall margin. Suggest a catch-up application.
+      const billingVsCost = actBil - actCost;
+      if (actCost > 0 && billingVsCost < -(actCost * 0.1)) {
+        // How far behind: costs incurred vs billing received
+        const shortfall = actCost - actBil;
+        // Remaining months and remaining contract value
+        const remainingMonths = j.dur - n;
+        const remainingContract = j.contract * (1 - j.retention / 100) - actBil;
+        // Suggested next application: normal monthly rate + spread shortfall over min(2, remaining) months
+        const catchUpMonths = Math.max(1, Math.min(2, remainingMonths));
+        const normalMonthly = remainingMonths > 0 ? remainingContract / remainingMonths : remainingContract;
+        const suggestedApp = normalMonthly + (shortfall / catchUpMonths);
+        const severity = shortfall > actCost * 0.25 ? 'high' : 'medium';
+        risks.push({
+          type: 'margin',
+          label: 'Billing ' + fmt(shortfall) + ' behind costs to date — consider front-loading next application.'
+            + (remainingMonths > 0 ? ' Suggested next bill: ' + fmt(Math.max(0, suggestedApp)) + ' (normal ' + fmt(normalMonthly) + ' + ' + fmt(shortfall / catchUpMonths) + ' catch-up).' : ''),
+          severity
+        });
+      }
     }
     if (risks.length) atRisk.push({ j, risks });
   });
@@ -1245,7 +1266,7 @@ function renderSummary() {
       { key: 'costs-after-billing', label: 'Billing complete — costs still forecast', icon: '🟡' },
       { key: 'cost', label: 'Cost overrun vs forecast', icon: '🔴' },
       { key: 'billing', label: 'Billing behind forecast', icon: '🟡' },
-      { key: 'margin', label: 'Margin below threshold', icon: '🟡' },
+      { key: 'margin', label: 'Billing behind costs — recovery suggested', icon: '🟡' },
     ];
     categories.forEach(cat => {
       const items = [];

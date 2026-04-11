@@ -139,7 +139,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.17-Apr-11-09:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.18-Apr-11-09:20</div>
   </div>
 </div>
 
@@ -160,7 +160,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.17-Apr-11-09:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.18-Apr-11-09:20</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -2947,32 +2947,44 @@ function editJob(idx) {
   document.getElementById('f-moiety').value = String(j.moiety || 12);
   document.getElementById('f-payment-terms').value = String(j.paymentTerms || 1);
 
-  // When a job has ended with remaining balance, prevent DECREASING duration (would lose the auto-extended month)
-  // but ALLOW increasing it (to add back a month or extend further)
+  // Calculate minimum allowable duration — must be enough months to cover any remaining balance
+  // This applies whether the job has ended or is still active
   const cur = getCurrentMonth();
   const scheduled = getMonths(j.start, j.dur);
   const lastScheduled = scheduled[scheduled.length - 1];
-  const effectiveMths = getEffectiveMonths(j);
-  // Job needs guarding if: active, ended, and effective months extend beyond scheduled
-  const needsGuard = j.status !== 'complete'
-    && lastScheduled < cur
-    && effectiveMths.length > scheduled.length;
-  // We don't fully disable — instead we set a minimum value and warn
-  const isAutoExtended = needsGuard;
 
-  // Lock duration if auto-extended — must be reviewed before reducing
+  // Check if any field has remaining balance
+  const fields = ['billing', 'labour', 'materials', 'overhead'];
+  const hasBalance = j.status !== 'complete' && fields.some(field => {
+    const total = field === 'billing' ? j.contract * (1 - j.retention / 100) : j[field];
+    let spent = 0;
+    scheduled.forEach(m => {
+      const a = j.actuals[m] && j.actuals[m][field] !== undefined ? j.actuals[m][field] : null;
+      if (a !== null) spent += a;
+    });
+    return (total - spent) > 0.5;
+  });
+
+  // Minimum duration: enough months from start to reach at least current month
+  let minDuration = 1;
+  if (hasBalance) {
+    // Count months from job start to current month inclusive
+    let count = 0, m = j.start;
+    while (m <= cur && count < 999) { count++; m = addMonths(m, 1); }
+    minDuration = Math.max(j.dur, count);
+  }
+
   const durEl = document.getElementById('f-dur');
   const durLockEl = document.getElementById('f-dur-lock');
-  if (isAutoExtended) {
-    // Allow increasing but not decreasing below current value
+  if (hasBalance) {
     durEl.disabled = false;
-    durEl.min = j.dur;
+    durEl.min = minDuration;
     durEl.style.background = '';
     durEl.style.color = '';
     if (durLockEl) {
       durLockEl.style.display = 'block';
       durLockEl.innerHTML = '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:7px 12px;font-size:12px;color:#92400e;margin-top:4px">'
-        + '⚠ This job has unallocated balance — duration cannot be reduced below ' + j.dur + ' months. '
+        + '⚠ This job has unallocated balance — duration cannot be reduced below ' + minDuration + ' months. '
         + 'You can increase it. To close the job, use <strong>Mark complete</strong> in the actuals tab.'
         + '</div>';
     }

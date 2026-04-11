@@ -139,7 +139,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.21-Apr-11-10:15</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.22-Apr-11-10:35</div>
   </div>
 </div>
 
@@ -160,7 +160,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.21-Apr-11-10:15</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.22-Apr-11-10:35</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -2367,7 +2367,44 @@ function renderForecastSection() {
   if (forecastChartInst) { forecastChartInst.destroy(); forecastChartInst = null; }
   const chartH = allMonths.length > 18 ? 320 : 280;
 
-  contentEl.innerHTML = `
+  // ── Range metrics ────────────────────────────────────────────────────────────
+  const cur = getCurrentMonth();
+  let rmTotalBilling=0, rmTotalCost=0, rmTotalLiab=0, rmTotalRet=0, rmTotalCredits=0;
+  let rmActBilling=0, rmActCost=0, rmActMonths=0;
+  rows.forEach(r => {
+    rmTotalBilling  += r.tNetBilling;
+    rmTotalCost     += r.tC;
+    rmTotalLiab     += r.tLiab;
+    rmTotalRet      += r.tRetReceived;
+    rmTotalCredits  += r.tCreditsReceived;
+    // Actuals = past months only
+    if (r.m < cur) {
+      jobs.forEach(j => {
+        const a = j.actuals[r.m];
+        if (a) {
+          rmActCost    += (a.labour||0) + (a.materials||0) + (a.overhead||0);
+          rmActBilling += (a.billing||0);
+        }
+      });
+      rmActMonths++;
+    }
+  });
+  const rmProfit   = rmTotalBilling - rmTotalCost;
+  const rmMargin   = rmTotalBilling > 0 ? rmProfit / rmTotalBilling * 100 : 0;
+  const rmNetCash  = rmTotalBilling + rmTotalRet + rmTotalCredits - rmTotalCost - rmTotalLiab;
+  const rmActProfit = rmActMonths > 0 ? rmActBilling - rmActCost : null;
+  const rmActMargin = rmActBilling > 0 ? (rmActBilling - rmActCost) / rmActBilling * 100 : null;
+
+  const metricsHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:1.25rem">'
+    + '<div class="metric"><div class="metric-label">Net billing in range</div><div class="metric-value">' + fmt(rmTotalBilling) + '</div><div style="font-size:11px;color:#888;margin-top:2px">After retention deducted</div></div>'
+    + '<div class="metric"><div class="metric-label">Total costs in range</div><div class="metric-value">' + fmt(rmTotalCost + rmTotalLiab) + '</div><div style="font-size:11px;color:#888;margin-top:2px">Job costs + liabilities</div></div>'
+    + '<div class="metric"><div class="metric-label">Forecast profit</div><div class="metric-value ' + (rmProfit >= 0 ? 'green' : 'red') + '">' + fmt(rmProfit) + '</div><div style="font-size:11px;color:#888;margin-top:2px">Billing minus job costs</div></div>'
+    + '<div class="metric"><div class="metric-label">Forecast margin</div><div class="metric-value ' + (rmMargin >= 15 ? 'green' : 'red') + '">' + fmtPct(rmMargin) + '</div><div style="font-size:11px;color:#888;margin-top:2px">% of net billing</div></div>'
+    + '<div class="metric"><div class="metric-label">Net working capital</div><div class="metric-value ' + (rmNetCash >= 0 ? 'green' : 'red') + '">' + fmt(rmNetCash) + '</div><div style="font-size:11px;color:#888;margin-top:2px">Incl. liabilities &amp; credits</div></div>'
+    + (rmActProfit !== null ? '<div class="metric"><div class="metric-label">Actual profit to date</div><div class="metric-value ' + (rmActProfit >= 0 ? 'green' : 'red') + '">' + fmt(rmActProfit) + '</div><div style="font-size:11px;color:#888;margin-top:2px">' + (rmActMargin !== null ? fmtPct(rmActMargin) + ' margin' : '') + '</div></div>' : '')
+    + '</div>';
+
+  contentEl.innerHTML = metricsHtml + `
     <div style="display:flex;gap:12px;font-size:12px;color:#888;margin-bottom:.75rem;flex-wrap:wrap;align-items:center">
       <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:2px;background:rgba(22,163,74,0.75);display:inline-block"></span>Net billing</span>
       <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:2px;background:rgba(15,118,110,0.75);display:inline-block"></span>Retention received</span>

@@ -1831,7 +1831,50 @@ function setActualsJob(idx) { activeActualsJob = idx; renderActualsSection(); }
 
 async function markJobComplete(idx) {
   const j = jobs[idx];
-  if (!confirm('Mark "' + j.name + '" as complete? This will remove remaining cost forecast from future months. Billing balance will still show until invoiced. You can undo by clicking "Undo complete" in the actuals tab.')) return;
+  const cur = getCurrentMonth();
+  const effectiveMths = getEffectiveMonths(j);
+  // The "final" month to enter actuals for — last effective month that is before or equal to current
+  const closedMonths = effectiveMths.filter(m => m < cur);
+  const finalMonth = closedMonths[closedMonths.length - 1];
+
+  if (finalMonth) {
+    const existing = j.actuals[finalMonth] || {};
+    const hasAllActuals = ['labour','materials','overhead','billing'].every(f => existing[f] !== undefined);
+
+    if (!hasAllActuals) {
+      // Show a small inline form in the confirm dialog to capture final actuals
+      const curL   = existing.labour    !== undefined ? existing.labour    : '';
+      const curM   = existing.materials !== undefined ? existing.materials : '';
+      const curO   = existing.overhead  !== undefined ? existing.overhead  : '';
+      const curB   = existing.billing   !== undefined ? existing.billing   : '';
+
+      const answer = prompt(
+        'Before marking "' + j.name + '" complete, please confirm the final actuals for ' + monthLabel(finalMonth) + '.\n\n' +
+        'Enter values as: Labour, Materials, Overhead, Billing (comma separated)\n' +
+        'Enter 0 for any that are nil. Leave blank to skip and complete anyway.\n\n' +
+        'Current values: ' + [curL||'—', curM||'—', curO||'—', curB||'—'].join(', '),
+        [curL, curM, curO, curB].join(', ')
+      );
+
+      if (answer === null) return; // cancelled
+
+      if (answer.trim() !== '') {
+        const parts = answer.split(',').map(s => parseFloat(s.trim()));
+        if (parts.length === 4 && parts.every(p => !isNaN(p))) {
+          if (!j.actuals[finalMonth]) j.actuals[finalMonth] = {};
+          j.actuals[finalMonth].labour    = parts[0];
+          j.actuals[finalMonth].materials = parts[1];
+          j.actuals[finalMonth].overhead  = parts[2];
+          j.actuals[finalMonth].billing   = parts[3];
+        } else if (answer.trim() !== '') {
+          alert('Could not parse values — please enter four numbers separated by commas, e.g. 1200, 450, 0, 5000');
+          return;
+        }
+      }
+    }
+  }
+
+  if (!confirm('Mark "' + j.name + '" as complete? Remaining cost forecast will be removed. Billing balance stays until invoiced. Click "Undo complete" to reverse.')) return;
   j.status = 'complete';
   renderAll();
   await dbSave(j);

@@ -139,7 +139,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.18-Apr-11-09:20</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.19-Apr-11-09:40</div>
   </div>
 </div>
 
@@ -160,7 +160,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.18-Apr-11-09:20</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.19-Apr-11-09:40</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -1192,20 +1192,27 @@ function renderSummary() {
       });
     }
 
-    // ── Flag 3: cost overrun vs prorated forecast ────────────────────────────
+    // ── Flag 3: cost overrun vs total budget ────────────────────────────────
     if (!elapsed.length) { if (risks.length) atRisk.push({ j, risks }); return; }
     const n = elapsed.length;
-    const fcLpm = j.labour / j.dur, fcMpm = j.materials / j.dur, fcOpm = j.overhead / j.dur;
     const fcBpm = j.contract * (1 - j.retention / 100) / j.dur;
     let actCost=0, actBil=0, hasAny=false;
     elapsed.forEach(m => { const a = j.actuals[m]; if (a) { actCost += (a.labour||0)+(a.materials||0)+(a.overhead||0); actBil += a.billing||0; hasAny = true; } });
     if (hasAny) {
-      const fcCost = (fcLpm + fcMpm + fcOpm) * n;
-      const fcBil  = fcBpm * n;
-      const costOverrun = actCost - fcCost;
+      // Total budgeted costs and net contract value
+      const totalBudgetCost = j.labour + j.materials + j.overhead;
+      const totalNetContract = j.contract * (1 - j.retention / 100);
+      const fcBil = fcBpm * n;
+
+      // Cost overrun: actuals exceed total budget (not prorated)
+      const costOverrun = actCost - totalBudgetCost;
+      if (costOverrun > totalBudgetCost * 0.05) {
+        risks.push({ type: 'cost', label: 'Total costs ' + fmt(actCost) + ' exceed budget of ' + fmt(totalBudgetCost) + ' — overrun of ' + fmt(costOverrun), severity: costOverrun > totalBudgetCost * 0.15 ? 'high' : 'medium' });
+      }
+
+      // Billing behind prorated forecast (timing check — this one prorated makes sense)
       const billingBehind = fcBil - actBil;
-      if (costOverrun > fcCost * 0.05) risks.push({ type: 'cost', label: 'Costs ' + fmt(costOverrun) + ' over prorated forecast', severity: costOverrun > fcCost * 0.15 ? 'high' : 'medium' });
-      if (billingBehind > fcBil * 0.1)  risks.push({ type: 'billing', label: 'Billing ' + fmt(billingBehind) + ' behind prorated forecast', severity: billingBehind > fcBil * 0.2 ? 'high' : 'medium' });
+      if (billingBehind > fcBil * 0.1) risks.push({ type: 'billing', label: 'Billing ' + fmt(billingBehind) + ' behind prorated forecast', severity: billingBehind > fcBil * 0.2 ? 'high' : 'medium' });
 
       // ── Billing recovery check ───────────────────────────────────────────────
       const billingVsCost = actBil - actCost;
@@ -1260,7 +1267,7 @@ function renderSummary() {
     const categories = [
       { key: 'billing-overrun', label: 'Billing outstanding past end date', icon: '🔴' },
       { key: 'costs-after-billing', label: 'Billing complete — costs still forecast', icon: '🟡' },
-      { key: 'cost', label: 'Cost overrun vs forecast', icon: '🔴' },
+      { key: 'cost', label: 'Cost overrun vs total budget', icon: '🔴' },
       { key: 'billing', label: 'Billing behind forecast', icon: '🟡' },
       { key: 'margin', label: 'Billing behind costs — recovery suggested', icon: '🟡' },
     ];

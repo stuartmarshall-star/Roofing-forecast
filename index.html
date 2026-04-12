@@ -139,7 +139,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.37-Apr-12-12:30</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.38-Apr-12-12:45</div>
   </div>
 </div>
 
@@ -160,7 +160,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.37-Apr-12-12:30</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.38-Apr-12-12:45</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -847,7 +847,21 @@ function getEffectiveMonths(job) {
     });
     return (total - spent) > 0.5;
   });
-  return hasBalance ? [...scheduled, addMonths(lastMonth, 1)] : scheduled;
+  if (!hasBalance) return scheduled;
+
+  // Check if current month already has actuals entered
+  // If it does, current month is "used up" and we need an extra month for the balance
+  // If it doesn't, current month itself serves as the overflow/forecast month — no extension needed
+  const curActuals = job.actuals[cur];
+  const curHasActuals = curActuals && Object.keys(curActuals).some(f => curActuals[f] !== undefined);
+  if (curHasActuals) {
+    // Current month is accounted for — add one more month for remaining balance
+    return [...scheduled, addMonths(lastMonth, 1)];
+  } else {
+    // Current month is still open — it will show the balance as forecast, no extension needed
+    // But we need to include current month in the schedule if it's not already there
+    return lastMonth < cur ? [...scheduled, cur] : scheduled;
+  }
 }
 
 function getSummary(job, field) {
@@ -3219,13 +3233,15 @@ function editJob(idx) {
   });
 
   // Minimum duration when there's a remaining balance:
-  // always months from start to current month + 1 (one overflow month is always enough)
-  // Never inflate based on j.dur — that would lock in user errors
+  // If current month has actuals → min = elapsed months + 1 (overflow month needed)
+  // If current month has no actuals → min = elapsed months (current month IS the overflow)
   let minDuration = 1;
   if (hasBalance) {
     let count = 0, m = j.start;
     while (m <= cur && count < 999) { count++; m = addMonths(m, 1); }
-    minDuration = count + 1; // current month elapsed + 1 overflow month
+    const curActuals = j.actuals[cur];
+    const curHasActuals = curActuals && Object.keys(curActuals).some(f => curActuals[f] !== undefined);
+    minDuration = curHasActuals ? count + 1 : count;
   }
 
   const durEl = document.getElementById('f-dur');

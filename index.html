@@ -139,7 +139,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.26-Apr-11-11:45</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.27-Apr-11-12:15</div>
   </div>
 </div>
 
@@ -160,7 +160,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.26-Apr-11-11:45</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.27-Apr-11-12:15</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -3463,26 +3463,29 @@ async function qboConnect() {
 
     // Open OAuth popup
     const popup = window.open(data.url, 'qbo-auth', 'width=600,height=700,scrollbars=yes');
+    statusEl.textContent = 'Waiting for QuickBooks authorisation...';
 
-    // Listen for callback message from popup
-    const handler = async (event) => {
-      if (event.data?.type === 'QBO_CONNECTED') {
-        window.removeEventListener('message', handler);
-        statusEl.textContent = '✓ QB connected';
-        await qboCheckConnection();
-        await qboSync();
-      }
-    };
-    window.addEventListener('message', handler);
-
-    // Fallback — check every 2s if popup closed
+    // Poll every 2s to check if connected — works across domains
     const timer = setInterval(async () => {
-      if (popup.closed) {
+      try {
+        // Check if popup closed
+        if (popup && popup.closed) {
+          clearInterval(timer);
+          // Check if tokens were stored
+          const { data: tokenData } = await window._sb.from('settings').select('value').eq('key', 'qbo_tokens').single();
+          if (tokenData?.value) {
+            statusEl.textContent = '✓ QB connected — syncing...';
+            await qboCheckConnection();
+            await qboSync();
+          } else {
+            statusEl.textContent = 'Connection cancelled or failed — please try again';
+            await qboCheckConnection();
+          }
+        }
+      } catch(e) {
         clearInterval(timer);
-        window.removeEventListener('message', handler);
-        await qboCheckConnection();
       }
-    }, 2000);
+    }, 1500);
 
   } catch (err) {
     statusEl.textContent = '✗ ' + err.message;

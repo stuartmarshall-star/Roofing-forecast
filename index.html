@@ -139,7 +139,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.31-Apr-12-10:30</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.33-Apr-12-11:20</div>
   </div>
 </div>
 
@@ -160,7 +160,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.31-Apr-12-10:30</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.33-Apr-12-11:20</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -2324,7 +2324,12 @@ function getForecastMonths() {
     jobs.forEach(j => {
       const ms = getEffectiveMonths(j);
       if (!earliest || ms[0] < earliest) earliest = ms[0];
-      const lagMonths = j.paymentTerms === 0 ? 0 : (j.paymentTerms >= 2) ? 2 : 1;
+      // Only extend end by payment terms for new jobs with no actuals
+      const hasActuals = Object.keys(j.actuals || {}).some(mo => {
+        const a = j.actuals[mo];
+        return a && Object.keys(a).some(f => a[f] !== undefined && a[f] !== 0);
+      });
+      const lagMonths = hasActuals ? 0 : (j.paymentTerms === 0 ? 0 : (j.paymentTerms >= 2) ? 2 : 1);
       const extendedEnd = addMonths(ms[ms.length - 1], lagMonths);
       if (!latest || extendedEnd > latest) latest = extendedEnd;
     });
@@ -2420,12 +2425,26 @@ function renderForecastSection() {
     let tL=0, tM=0, tO=0, tGrossBilling=0, tRetHeld=0;
     jobs.forEach(j => {
       const ms = getEffectiveMonths(j);
+      // Has QBO data = has at least one month of actuals entered
+      const hasActuals = Object.keys(j.actuals || {}).some(mo => {
+        const a = j.actuals[mo];
+        return a && Object.keys(a).some(f => a[f] !== undefined && a[f] !== 0);
+      });
+      // Only apply payment terms lag for new jobs with no actuals yet
+      const useOffset = !hasActuals;
+
       if (ms.includes(m)) {
         tL += buildSchedule(j,'labour')[m]?.value || 0;
         tO += buildSchedule(j,'overhead')[m]?.value || 0;
       }
-      if (ms.includes(mPrev)) tM += buildSchedule(j,'materials')[mPrev]?.value || 0;
-      const billingMonth = j.paymentTerms === 0 ? m : (j.paymentTerms >= 2) ? mPrev2 : mPrev;
+      // Materials: lag by 1 month only for new jobs, otherwise current month
+      const matMonth = (useOffset && ms.includes(mPrev)) ? mPrev : m;
+      if (ms.includes(matMonth)) tM += buildSchedule(j,'materials')[matMonth]?.value || 0;
+
+      // Billing: apply payment terms only for new jobs, otherwise current month
+      const billingMonth = useOffset
+        ? (j.paymentTerms === 0 ? m : (j.paymentTerms >= 2) ? mPrev2 : mPrev)
+        : m;
       const prevBilling = getJobBillingForMonth(j, billingMonth);
       tGrossBilling += prevBilling.gross;
       tRetHeld += prevBilling.ret;
@@ -2545,13 +2564,24 @@ function renderForecastSection() {
 
     const jobDetails = [];
     jobs.forEach(j => {
-      const ms = getEffectiveMonths(j);  // use effective so auto-extended month appears
+      const ms = getEffectiveMonths(j);
       const hasCur = ms.includes(r.m), hasPrev = ms.includes(mPrev);
       if (!hasCur && !hasPrev) return;
+
+      // Only apply payment terms lag for new jobs with no actuals
+      const hasActuals = Object.keys(j.actuals || {}).some(mo => {
+        const a = j.actuals[mo];
+        return a && Object.keys(a).some(f => a[f] !== undefined && a[f] !== 0);
+      });
+      const useOffset = !hasActuals;
+
       const jL = hasCur ? (buildSchedule(j,'labour')[r.m]?.value || 0) : 0;
       const jO = hasCur ? (buildSchedule(j,'overhead')[r.m]?.value || 0) : 0;
-      const jM = hasPrev ? (buildSchedule(j,'materials')[mPrev]?.value || 0) : 0;
-      const jBillingMonth = j.paymentTerms === 0 ? r.m : (j.paymentTerms >= 2) ? prevMonth(mPrev) : mPrev;
+      const matMonth = useOffset ? mPrev : r.m;
+      const jM = ms.includes(matMonth) ? (buildSchedule(j,'materials')[matMonth]?.value || 0) : 0;
+      const jBillingMonth = useOffset
+        ? (j.paymentTerms === 0 ? r.m : (j.paymentTerms >= 2) ? prevMonth(mPrev) : mPrev)
+        : r.m;
       const prevBil = getJobBillingForMonth(j, jBillingMonth);
       const jGross = prevBil.gross, jRet = prevBil.ret, jNet = jGross - jRet;
       const jCost = jL + jM + jO;
@@ -3593,6 +3623,7 @@ async function qboSync() {
     statusEl.textContent = '✓ Synced — '
       + s.projectsFound + ' projects, '
       + a.updated + ' jobs updated'
+      + (a.depositsCreated ? ', ' + a.depositsCreated + ' deposit' + (a.depositsCreated > 1 ? 's' : '') + ' created' : '')
       + (a.notFound?.length ? ', ' + a.notFound.length + ' not matched' : '');
 
     // Reload jobs from Supabase to pick up new actuals

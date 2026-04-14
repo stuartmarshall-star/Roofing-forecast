@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.40-Apr-14-09:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.41-Apr-14-10:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.40-Apr-14-09:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.41-Apr-14-10:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -2320,13 +2320,38 @@ function renderActualsSection() {
     return Math.round(a.billing||0);
   });
 
+  // Extended forecast trails — pick up from where actuals end, continuing into future months
+  // Find last actual index for cost and billing
+  const lastActCostIdx = chartActCost.reduce((last, v, i) => v !== null ? i : last, -1);
+  const lastActBilIdx  = chartActBil.reduce((last, v, i) => v !== null ? i : last, -1);
+
+  // Cost trail: null for all past months, then reforecast values from last actual onwards
+  const chartCostTrail = chartMonths.map((m, i) => {
+    if (lastActCostIdx < 0) return null; // no actuals at all
+    if (i < lastActCostIdx) return null; // before last actual — gap
+    if (i === lastActCostIdx) return chartActCost[i]; // join point
+    // Future: use reforecast from schedule
+    const fc = scheds.labour[m].value + scheds.materials[m].value + scheds.overhead[m].value;
+    return Math.round(fc);
+  });
+
+  // Billing trail: same approach using billing schedule
+  const chartBilTrail = chartMonths.map((m, i) => {
+    if (lastActBilIdx < 0) return null;
+    if (i < lastActBilIdx) return null;
+    if (i === lastActBilIdx) return chartActBil[i];
+    return Math.round(scheds.billing[m].value);
+  });
+
   const chartSection = '<div class="card" style="padding:1rem 1.25rem;margin-bottom:1rem">'
     + '<div style="font-size:13px;font-weight:500;margin-bottom:.75rem;color:#1a1a1a">Forecast vs actual</div>'
     + '<div style="display:flex;gap:16px;font-size:12px;color:#888;margin-bottom:.5rem;flex-wrap:wrap">'
     + '<span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:2px;background:#dc2626;display:inline-block"></span>Forecast costs</span>'
     + '<span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:3px;border-top:2px dashed #dc2626;display:inline-block"></span>Actual costs</span>'
-    + '<span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:2px;background:#16a34a;display:inline-block"></span>Forecast billing</span>'
-    + '<span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:3px;border-top:2px dashed #16a34a;display:inline-block"></span>Actual billing</span>'
+    + '<span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:2px;background:#f87171;display:inline-block;opacity:0.5"></span>Cost remaining</span>'
+    + '<span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:2px;background:#1d4ed8;display:inline-block"></span>Forecast billing</span>'
+    + '<span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:3px;border-top:2px dashed #1d4ed8;display:inline-block"></span>Actual billing</span>'
+    + '<span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:2px;background:#93c5fd;display:inline-block;opacity:0.7"></span>Billing remaining</span>'
     + '</div>'
     + '<div style="position:relative;height:220px"><canvas id="actualsChart"></canvas></div>'
     + '</div>';
@@ -2411,10 +2436,12 @@ function renderActualsSection() {
       data: {
         labels: chartMonths.map(monthLabel),
         datasets: [
-          { label: 'Forecast costs',   data: chartFcCost,  borderColor: '#dc2626', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, tension: 0.3 },
-          { label: 'Actual costs',     data: chartActCost, borderColor: '#dc2626', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3, tension: 0.3, borderDash: [5,3], spanGaps: false },
-          { label: 'Forecast billing', data: chartFcBil,   borderColor: '#16a34a', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, tension: 0.3 },
-          { label: 'Actual billing',   data: chartActBil,  borderColor: '#16a34a', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3, tension: 0.3, borderDash: [5,3], spanGaps: false }
+          { label: 'Forecast costs',    data: chartFcCost,    borderColor: '#dc2626', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: false },
+          { label: 'Actual costs',      data: chartActCost,   borderColor: '#dc2626', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3, tension: 0.3, borderDash: [5,3], spanGaps: false },
+          { label: 'Cost remaining',    data: chartCostTrail, borderColor: '#f87171', backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 1, tension: 0.3, borderDash: [3,4], spanGaps: false },
+          { label: 'Forecast billing',  data: chartFcBil,     borderColor: '#1d4ed8', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: false },
+          { label: 'Actual billing',    data: chartActBil,    borderColor: '#1d4ed8', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3, tension: 0.3, borderDash: [5,3], spanGaps: false },
+          { label: 'Billing remaining', data: chartBilTrail,  borderColor: '#93c5fd', backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 1, tension: 0.3, borderDash: [3,4], spanGaps: false }
         ]
       },
       options: {

@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.43-Apr-14-12:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.44-Apr-14-13:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.43-Apr-14-12:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.44-Apr-14-13:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -532,6 +532,31 @@ let isConnected = false;
 let fcStartMonth = '';
 let fcLength = 12;
 let sumFromMonth = '';
+let appStartMonth = ''; // shared app-wide start date, set on forecast page
+
+// ── Persistence helpers ───────────────────────────────────────────────────────
+function savePrefs() {
+  try {
+    localStorage.setItem('rf_fcStart',   fcStartMonth  || '');
+    localStorage.setItem('rf_fcLength',  String(fcLength));
+    localStorage.setItem('rf_appStart',  appStartMonth || '');
+  } catch(e) {}
+}
+function loadPrefs() {
+  try {
+    fcStartMonth  = localStorage.getItem('rf_fcStart')  || '';
+    const len     = localStorage.getItem('rf_fcLength');
+    fcLength      = len === 'all' ? 'all' : (parseInt(len) || 12);
+    appStartMonth = localStorage.getItem('rf_appStart') || '';
+    sumFromMonth  = appStartMonth; // summary follows app-wide start
+  } catch(e) {}
+}
+function getLastSyncTime() {
+  try { return parseInt(localStorage.getItem('rf_lastSync') || '0'); } catch(e) { return 0; }
+}
+function setLastSyncTime() {
+  try { localStorage.setItem('rf_lastSync', String(Date.now())); } catch(e) {}
+}
 
 // ── Supabase helpers ─────────────────────────────────────────────────────────
 function sbHeaders() {
@@ -1194,8 +1219,8 @@ function renderSummary() {
   const next1 = addMonths(cur, 1), next2 = addMonths(cur, 2), next3 = addMonths(cur, 3);
 
   // ── Portfolio overview ──────────────────────────────────────────────────────
-  // sumFromMonth: only count jobs/actuals starting on or after this month
-  const fromM = sumFromMonth || '';
+  const fromM = appStartMonth || '';
+  sumFromMonth = fromM; // keep in sync
 
   let totalContract=0, totalCost=0, totalActCost=0, totalActBilling=0, totalHeld=0, totalReleased=0;
   const activeJobs = jobs.filter(j => j.status === 'active');
@@ -1319,15 +1344,12 @@ function renderSummary() {
   const fcProfit = totalContract - totalCost;
   const actProfit = totalActBilling > 0 ? totalActBilling - totalActCost : null;
   const fromLabel = fromM ? ' from ' + monthLabel(fromM) : ' — all time';
+  const fromNote  = fromM
+    ? `<span style="font-size:11px;color:#888">Start date: <b>${monthLabel(fromM)}</b> — <a href="#" onclick="showTab('forecast');return false" style="color:#1d4ed8;text-decoration:none">change on Forecast tab ↗</a></span>`
+    : `<span style="font-size:11px;color:#888">No start date set — <a href="#" onclick="showTab('forecast');return false" style="color:#1d4ed8;text-decoration:none">set on Forecast tab ↗</a></span>`;
   html += `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:.5rem">
     <div style="font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em">Portfolio overview${fromLabel}</div>
-    <div style="display:flex;align-items:center;gap:8px;font-size:12px">
-      <label style="color:#888;white-space:nowrap">From month:</label>
-      <input type="month" value="${fromM ? fromM : ''}" placeholder="All time"
-        style="font-size:12px;padding:3px 7px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;color:#1a1a1a"
-        onchange="sumFromMonth = this.value ? this.value : ''; renderSummary()">
-      ${fromM ? `<button onclick="sumFromMonth='';renderSummary()" style="font-size:11px;padding:3px 8px;border:1px solid #d1d5db;border-radius:5px;background:#f9fafb;cursor:pointer;color:#6b7280">Clear</button>` : ''}
-    </div>
+    ${fromNote}
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:1.5rem">
     <div class="metric"><div class="metric-label">Total contracted value</div><div class="metric-value">${fmt(totalContract)}</div><div style="font-size:11px;color:#888;margin-top:2px">${fromM ? 'Jobs active from ' + monthLabel(fromM) : jobs.length + ' jobs, ' + activeJobs.length + ' active'}</div></div>
@@ -2557,29 +2579,37 @@ function getForecastMonths() {
 }
 
 function initForecastControls() {
-  const start = getEarliestJobStart();
-  fcStartMonth = start;
-  fcLength = 'all';
+  // If saved prefs exist, use them; otherwise default to earliest job or current month
+  if (!fcStartMonth) {
+    const start = getEarliestJobStart();
+    fcStartMonth = start;
+    fcLength = 'all';
+  }
   const startEl = document.getElementById('fc-start');
-  if (startEl) startEl.value = fmtMonthInput(start);
+  if (startEl) startEl.value = fmtMonthInput(fcStartMonth);
   const lenEl = document.getElementById('fc-length');
-  if (lenEl) lenEl.value = 'all';
+  if (lenEl) lenEl.value = fcLength === 'all' ? 'all' : String(fcLength);
 }
 
 function onFcLengthChange() {
   const val = document.getElementById('fc-length').value;
   fcLength = val === 'all' ? 'all' : parseInt(val);
+  savePrefs();
   renderForecastSection();
 }
 
 function resetForecastControls() {
   fcStartMonth = getCurrentMonth();
   fcLength = 12;
+  appStartMonth = fcStartMonth;
+  sumFromMonth  = fcStartMonth;
   const startEl = document.getElementById('fc-start');
   if (startEl) startEl.value = fmtMonthInput(fcStartMonth);
   const lenEl = document.getElementById('fc-length');
   if (lenEl) lenEl.value = '12';
+  savePrefs();
   renderForecastSection();
+  renderSummary();
 }
 
 function renderForecastSection() {
@@ -2589,8 +2619,19 @@ function renderForecastSection() {
   // Sync control state from DOM
   const startEl = document.getElementById('fc-start');
   const lenEl   = document.getElementById('fc-length');
-  if (startEl && startEl.value) fcStartMonth = parseMonthInput(startEl.value) || fcStartMonth;
-  if (lenEl) fcLength = lenEl.value === 'all' ? 'all' : parseInt(lenEl.value);
+  if (startEl && startEl.value) {
+    const parsed = parseMonthInput(startEl.value) || fcStartMonth;
+    if (parsed !== fcStartMonth) {
+      fcStartMonth  = parsed;
+      appStartMonth = parsed; // propagate as app-wide start date
+      sumFromMonth  = parsed;
+      savePrefs();
+    }
+  }
+  if (lenEl) {
+    const newLen = lenEl.value === 'all' ? 'all' : parseInt(lenEl.value);
+    if (newLen !== fcLength) { fcLength = newLen; savePrefs(); }
+  }
 
   // Ensure controls exist
   if (!document.getElementById('fc-start')) {
@@ -3840,12 +3881,14 @@ async function qboConnect() {
   }
 }
 
-async function qboSync() {
+async function qboSync(silent = false) {
   const statusEl = document.getElementById('qbo-status');
   const btn      = document.getElementById('btn-qbo-sync');
-  btn.textContent    = '⟳ Syncing...';
-  btn.disabled       = true;
-  statusEl.textContent = 'Syncing from QuickBooks...';
+  if (!silent) {
+    btn.textContent    = '⟳ Syncing...';
+    btn.disabled       = true;
+    statusEl.textContent = 'Syncing from QuickBooks...';
+  }
 
   try {
     const res  = await fetch(QBO_FUNCTIONS_BASE + '/qbo-sync', {
@@ -3859,42 +3902,85 @@ async function qboSync() {
 
     if (!data.success) throw new Error(data.error || 'Sync failed');
 
+    setLastSyncTime();
+
     const s = data.summary;
     const a = data.applied;
-    statusEl.textContent = '✓ Synced — '
+    const lastSyncStr = 'Last sync: ' + new Date().toLocaleDateString('en-GB', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+    statusEl.textContent = (silent ? '✓ Auto-synced — ' : '✓ Synced — ')
       + s.projectsFound + ' projects, '
       + a.updated + ' jobs updated'
       + (a.depositsCreated ? ', ' + a.depositsCreated + ' deposit' + (a.depositsCreated > 1 ? 's' : '') + ' created' : '')
-      + (a.notFound?.length ? ', ' + a.notFound.length + ' not matched' : '');
+      + (a.notFound?.length ? ', ' + a.notFound.length + ' QB project' + (a.notFound.length > 1 ? 's' : '') + ' not in app ⚠' : '')
+      + ' · ' + lastSyncStr;
 
     // Reload jobs from Supabase to pick up new actuals
     await loadJobs();
 
-    if (a.notFound?.length) {
-      console.log('QBO projects not matched to forecast jobs:', a.notFound);
+    // Surface new QBO projects not matched to any job in the app
+    if (a.newProjects?.length) {
+      const existing = document.getElementById('qbo-new-projects-alert');
+      if (existing) existing.remove();
+      const alert = document.createElement('div');
+      alert.id = 'qbo-new-projects-alert';
+      alert.style.cssText = 'margin:8px 16px;padding:10px 14px;background:#fefce8;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#a16207';
+      const rows = a.newProjects.map(p =>
+        `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #fde68a">
+          <span><b>${p.eNum}</b> — ${p.name}</span>
+          <span style="color:#888">${p.created ? 'Created ' + new Date(p.created).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}</span>
+        </div>`
+      ).join('');
+      alert.innerHTML = `<div style="font-weight:600;margin-bottom:6px">⚠ ${a.newProjects.length} new QB project${a.newProjects.length > 1 ? 's' : ''} not yet in the forecast app — add these jobs to include their data:</div>${rows}
+        <div style="margin-top:6px"><a href="#" onclick="document.getElementById('qbo-new-projects-alert').remove();return false" style="color:#a16207;font-size:11px">Dismiss</a></div>`;
+      // Insert after header bar
+      const header = document.querySelector('.topbar') || document.querySelector('header') || document.body.firstChild;
+      header.parentNode.insertBefore(alert, header.nextSibling);
     }
+
     if (data.summary?.accountNames?.length) {
       console.log('QBO account names found in bills:', data.summary.accountNames);
     }
     console.log('Sync applied with current month filter:', data.applied?.curMonth);
 
   } catch (err) {
-    statusEl.textContent = '✗ Sync failed: ' + err.message;
-    if (err.message.includes('not connected')) {
+    if (!silent) statusEl.textContent = '✗ Sync failed: ' + err.message;
+    if (err.message?.includes('not connected')) {
       await qboCheckConnection();
     }
   } finally {
-    btn.textContent = '⟳ Sync from QB';
-    btn.disabled    = false;
+    if (!silent) {
+      btn.textContent = '⟳ Sync from QB';
+      btn.disabled    = false;
+    }
+  }
+}
+
+async function autoSyncIfDue() {
+  const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+  const last = getLastSyncTime();
+  if (Date.now() - last > SEVEN_DAYS) {
+    // Check QB is connected before attempting silent sync
+    try {
+      const res = await fetch(QBO_FUNCTIONS_BASE + '/qbo-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SB_ANON_KEY }
+      });
+      if (res.ok) {
+        const statusEl = document.getElementById('qbo-status');
+        if (statusEl) statusEl.textContent = '↻ Auto-syncing...';
+        await qboSync(true);
+      }
+    } catch(e) { /* silent fail — user can sync manually */ }
   }
 }
 
 // Start
 document.addEventListener('DOMContentLoaded', () => {
+  loadPrefs();
   initForecastControls();
   renderAll();
   loadJobs();
-  qboCheckConnection();
+  qboCheckConnection().then(() => autoSyncIfDue());
 });
 </script>
 </body>

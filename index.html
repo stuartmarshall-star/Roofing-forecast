@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.47-Apr-14-16:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.48-Apr-14-17:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.47-Apr-14-16:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.48-Apr-14-17:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -2761,13 +2761,9 @@ function renderForecastSection() {
         <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:2px;background:rgba(109,40,217,0.65);display:inline-block"></span>Liabilities</span>
         <span style="display:flex;align-items:center;gap:5px"><span style="width:24px;height:2px;background:#1d4ed8;display:inline-block"></span>Working capital</span>
       </div>
-      <div style="display:flex;gap:12px;font-size:12px;color:#888;flex-wrap:wrap;align-items:center" id="fc-legend-line">
-        <span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:2px;background:#1d4ed8;display:inline-block"></span>Billing actual</span>
-        <span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:2px;background:#93c5fd;display:inline-block;opacity:0.8"></span>Billing forecast</span>
-        <span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:2px;background:#dc2626;display:inline-block"></span>Labour actual</span>
-        <span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:2px;background:#fca5a5;display:inline-block;opacity:0.8"></span>Labour forecast</span>
-        <span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:2px;background:#ea580c;display:inline-block"></span>Materials actual</span>
-        <span style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:2px;background:#fdba74;display:inline-block;opacity:0.8"></span>Materials forecast</span>
+      <div style="display:flex;gap:16px;font-size:12px;color:#888;flex-wrap:wrap;align-items:center" id="fc-legend-line">
+        <span style="display:flex;align-items:center;gap:6px"><span style="width:22px;height:2.5px;background:#1d4ed8;display:inline-block;border-radius:2px"></span>Billing (solid = actual, dashed = forecast)</span>
+        <span style="display:flex;align-items:center;gap:6px"><span style="width:22px;height:2.5px;background:#dc2626;display:inline-block;border-radius:2px"></span>Costs + liabilities (solid = actual, dashed = forecast)</span>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">
         <button onclick="fcChartMode='bar';renderForecastSection()" style="font-size:11px;padding:4px 10px;border-radius:5px;border:1px solid #d1d5db;cursor:pointer;font-family:inherit;background:${fcChartMode==='bar'?'#1d4ed8':'#f9fafb'};color:${fcChartMode==='bar'?'#fff':'#374151'}">▦ Bar</button>
@@ -2817,42 +2813,34 @@ function renderForecastSection() {
   if (legendLine) legendLine.style.display = fcChartMode === 'line' ? 'flex' : 'none';
 
   if (fcChartMode === 'line') {
-    // ── Line chart: actual → forecast for Billing, Labour, Materials ─────────
-    // Build per-month actuals for each series
-    const actBilData = allMonths.map(m => {
-      let tot = 0, any = false;
-      jobs.forEach(j => { const a = j.actuals[m]; if (a && a.billing !== undefined) { tot += a.billing||0; any = true; } });
-      return any ? Math.round(tot) : null;
+    // ── Line chart: two lines using the forecast rows (blends actuals + forecast) ─
+    // rows already blends: past months use actuals where entered, forecast where not.
+    // This correctly handles months with partial actuals (some jobs done, some forecast).
+
+    // Build single value per month for each series from rows
+    const billingData = allMonths.map(m => {
+      const r = rows.find(row => row.m === m);
+      return r ? Math.round(r.tNetBilling) : null;
     });
-    const actLabData = allMonths.map(m => {
-      let tot = 0, any = false;
-      jobs.forEach(j => { const a = j.actuals[m]; if (a && a.labour !== undefined) { tot += a.labour||0; any = true; } });
-      return any ? Math.round(tot) : null;
-    });
-    const actMatData = allMonths.map(m => {
-      let tot = 0, any = false;
-      jobs.forEach(j => { const a = j.actuals[m]; if (a && a.materials !== undefined) { tot += a.materials||0; any = true; } });
-      return any ? Math.round(tot) : null;
+    const costsData = allMonths.map(m => {
+      const r = rows.find(row => row.m === m);
+      return r ? Math.round(r.tC + r.tLiab) : null;
     });
 
-    // Forecast values per month from schedule
-    const fcBilData  = allMonths.map(m => Math.round(rows.find(r=>r.m===m)?.tNetBilling || 0));
-    const fcLabData  = allMonths.map(m => Math.round(rows.find(r=>r.m===m)?.tL || 0));
-    const fcMatData  = allMonths.map(m => Math.round(rows.find(r=>r.m===m)?.tM || 0));
+    // Determine where actuals end — last month strictly before current month
+    // with at least one job having actual billing entered
+    const lastActualMonth = allMonths.slice().reverse().find(m => {
+      if (m >= cur) return false;
+      return jobs.some(j => { const a = j.actuals[m]; return a && a.billing !== undefined; });
+    });
+    const lastActIdx = lastActualMonth ? allMonths.indexOf(lastActualMonth) : -1;
 
-    // Trail: null for months with actuals, then picks up from last actual into forecast
-    function makeTrail(actData, fcData) {
-      const lastActIdx = actData.reduce((last,v,i) => v!==null?i:last, -1);
-      return actData.map((v, i) => {
-        if (lastActIdx < 0) return null;
-        if (i < lastActIdx) return null;
-        if (i === lastActIdx) return v;
-        return fcData[i];
-      });
-    }
-    const bilTrail = makeTrail(actBilData, fcBilData);
-    const labTrail = makeTrail(actLabData, fcLabData);
-    const matTrail = makeTrail(actMatData, fcMatData);
+    // Actual portion: solid - months up to and including lastActIdx
+    // Forecast portion: dashed - from lastActIdx onwards (joined at that point)
+    const bilActual   = billingData.map((v, i) => i <= lastActIdx ? v : null);
+    const bilForecast = billingData.map((v, i) => i < lastActIdx  ? null : v);
+    const costActual  = costsData.map((v, i)   => i <= lastActIdx ? v : null);
+    const costForecast= costsData.map((v, i)   => i < lastActIdx  ? null : v);
 
     forecastChartInst = new Chart(document.getElementById('forecastChart').getContext('2d'), {
       type: 'line',
@@ -2860,20 +2848,28 @@ function renderForecastSection() {
       data: {
         labels: allMonths.map(monthLabel),
         datasets: [
-          // Billing — blue (CVD safe vs red/orange)
-          { label: 'Billing actual',    data: actBilData, borderColor: '#1d4ed8', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3, tension: 0.3, spanGaps: false },
-          { label: 'Billing forecast',  data: bilTrail,   borderColor: '#93c5fd', backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 1, tension: 0.3, borderDash: [4,3], spanGaps: false },
-          // Labour — crimson red
-          { label: 'Labour actual',     data: actLabData, borderColor: '#dc2626', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3, tension: 0.3, spanGaps: false },
-          { label: 'Labour forecast',   data: labTrail,   borderColor: '#fca5a5', backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 1, tension: 0.3, borderDash: [4,3], spanGaps: false },
-          // Materials — orange
-          { label: 'Materials actual',  data: actMatData, borderColor: '#ea580c', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3, tension: 0.3, spanGaps: false },
-          { label: 'Materials forecast',data: matTrail,   borderColor: '#fdba74', backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 1, tension: 0.3, borderDash: [4,3], spanGaps: false },
+          // Billing — blue, solid actual then dashed forecast
+          { label: 'Billing (actual)',   data: bilActual,   borderColor: '#1d4ed8', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3, tension: 0.3, spanGaps: false },
+          { label: 'Billing (forecast)', data: bilForecast, borderColor: '#1d4ed8', backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 1, tension: 0.3, borderDash: [5,4], spanGaps: false },
+          // Costs + liabilities — red, solid actual then dashed forecast
+          { label: 'Costs (actual)',     data: costActual,  borderColor: '#dc2626', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3, tension: 0.3, spanGaps: false },
+          { label: 'Costs (forecast)',   data: costForecast,borderColor: '#dc2626', backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 1, tension: 0.3, borderDash: [5,4], spanGaps: false },
         ]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const v = ctx.raw;
+                if (v === null) return null;
+                return ctx.dataset.label + ': £' + (Math.abs(v)>=1000?(v/1000).toFixed(1)+'k':v);
+              }
+            }
+          }
+        },
         scales: {
           y: { ticks: { callback: v => '£' + (Math.abs(v)>=1000?(v/1000).toFixed(0)+'k':v), font:{size:11} }, grid:{color:'#f0f0f0'} },
           x: { ticks: { font:{size:11}, maxRotation: allMonths.length > 12 ? 45 : 0, autoSkip: allMonths.length > 24 }, grid:{display:false} }

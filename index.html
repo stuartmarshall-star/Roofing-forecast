@@ -43,6 +43,8 @@
   .badge-actual { background: #dcfce7; color: #16a34a; }
   .badge-reforecast { background: #fef9c3; color: #a16207; }
   .badge-forecast { background: #dbeafe; color: #1d4ed8; }
+  .badge-override { background: #eff6ff; color: #1d4ed8; border: 1px solid #93c5fd; }
+  .override-val { color: #1d4ed8; font-style: italic; }
   .badge-active { background: #dcfce7; color: #16a34a; }
   .badge-future { background: #dbeafe; color: #1d4ed8; }
   .badge-complete { background: #f3f4f6; color: #6b7280; }
@@ -139,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.39-Apr-12-13:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.40-Apr-14-09:00</div>
   </div>
 </div>
 
@@ -160,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.39-Apr-12-13:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.40-Apr-14-09:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -561,7 +563,8 @@ function dbToJob(row) {
     retentionReceivedDates: row.retention_received_dates || {},
     retentionInvoiceDates: row.retention_invoice_dates || {},
     retentionInvoiceAmounts: row.retention_invoice_amounts || {},
-    actuals: row.actuals || {}
+    actuals: row.actuals || {},
+    billingOverrides: row.billing_overrides || {}
   };
 }
 
@@ -576,7 +579,8 @@ function jobToDb(j) {
     retention_received_dates: j.retentionReceivedDates || {},
     retention_invoice_dates: j.retentionInvoiceDates || {},
     retention_invoice_amounts: j.retentionInvoiceAmounts || {},
-    actuals: j.actuals
+    actuals: j.actuals,
+    billing_overrides: j.billingOverrides || {}
   };
 }
 
@@ -799,10 +803,30 @@ function buildSchedule(job, field) {
     const a = job.actuals[m] && job.actuals[m][field] !== undefined ? job.actuals[m][field] : null;
     if (a !== null) { spentActual += a; actMonths.add(m); }
   });
+
+  // For billing: also account for overrides in next 2 forecast months
+  const overrides = (field === 'billing' && job.billingOverrides) ? job.billingOverrides : {};
+  const cur = getCurrentMonth();
+  const nextMonth = addMonths(cur, 1);
+  const afterNext = addMonths(cur, 2);
+  const overrideMonths = new Set([nextMonth, afterNext]);
+
+  // Sum overrides that apply (forecast months only — not already actuals)
+  let overrideTotal = 0;
+  const activeOverrideMonths = new Set();
+  overrideMonths.forEach(m => {
+    if (!actMonths.has(m) && overrides[m] !== undefined) {
+      overrideTotal += overrides[m];
+      activeOverrideMonths.add(m);
+    }
+  });
+
   const remaining = Math.max(0, originalTotal - spentActual);
-  const remainingMonths = effective.filter(m => !actMonths.has(m));
+  // Remaining after overrides spreads across non-override, non-actual future months
+  const remainingAfterOverrides = Math.max(0, remaining - overrideTotal);
+  const spreadMonths = effective.filter(m => !actMonths.has(m) && !activeOverrideMonths.has(m));
   const isComplete = job.status === 'complete';
-  const reforecastPM = remainingMonths.length > 0 ? remaining / remainingMonths.length : 0;
+  const reforecastPM = spreadMonths.length > 0 ? remainingAfterOverrides / spreadMonths.length : 0;
   const hasActuals = actMonths.size > 0 || hasPreStartDeposit;
   const result = {};
   effective.forEach(m => {
@@ -811,6 +835,8 @@ function buildSchedule(job, field) {
       result[m] = { value: a, type: 'actual' };
     } else if (isComplete && field !== 'billing') {
       result[m] = { value: 0, type: 'complete' };
+    } else if (field === 'billing' && activeOverrideMonths.has(m)) {
+      result[m] = { value: overrides[m], type: 'override' };
     } else if (hasActuals) {
       result[m] = { value: reforecastPM, type: 'reforecast' };
     } else {
@@ -2105,6 +2131,17 @@ function setActual(jobIdx, month, field, val) {
   saveTimer = setTimeout(() => dbSave(jobs[jobIdx]), 800);
 }
 
+function setBillingOverride(jobIdx, month, val) {
+  const j = jobs[jobIdx];
+  if (!j.billingOverrides) j.billingOverrides = {};
+  const n = parseFloat(val);
+  if (val === '' || isNaN(n)) delete j.billingOverrides[month];
+  else j.billingOverrides[month] = n;
+  renderAll();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => dbSave(j), 800);
+}
+
 function renderActualsSection() {
   const el = document.getElementById('actuals');
   if (!jobs.length) { el.innerHTML = '<div class="empty-state">No jobs yet.</div>'; return; }
@@ -2260,6 +2297,7 @@ function renderActualsSection() {
   const legend = '<div style="display:flex;gap:16px;font-size:12px;color:#888;margin-bottom:.75rem;flex-wrap:wrap">'
     + '<span><span class="badge badge-actual" style="margin-right:4px">actual</span> Figure you entered</span>'
     + '<span><span class="badge badge-reforecast" style="margin-right:4px">reforecast</span> Auto-adjusted from actuals</span>'
+    + '<span><span class="badge badge-override" style="margin-right:4px">override</span> Billing override (next 2 months)</span>'
     + '<span><span class="badge badge-forecast" style="margin-right:4px">original forecast</span> Even spread, no actuals yet</span>'
     + '</div>';
 
@@ -2305,14 +2343,26 @@ function renderActualsSection() {
     const cash = vals.billing.value - tc;
     const hasAct = fields.some(f => vals[f].type === 'actual');
     const hasRef = fields.some(f => vals[f].type === 'reforecast');
-    const rowType = hasAct ? 'actual' : hasRef ? 'reforecast' : 'forecast';
+    const hasOv = fields.some(f => vals[f].type === 'override');
+    const rowType = hasAct ? 'actual' : hasOv ? 'override' : hasRef ? 'reforecast' : 'forecast';
     const bg = hasAct ? 'background:#f9fafb' : '';
+
+    const isNextTwo = (m === addMonths(cur,1) || m === addMonths(cur,2));
 
     function cell(field) {
       const e = vals[field];
       const a = j.actuals[m] && j.actuals[m][field] !== undefined ? j.actuals[m][field] : '';
       if (isPast) return '<input class="actual-input" type="number" placeholder="' + Math.round(e.value) + '" value="' + a + '" onchange="setActual(' + activeActualsJob + ',\'' + m + '\',\'' + field + '\',this.value)">';
-      return '<span class="' + (e.type === 'reforecast' ? 'reforecast-val' : 'forecast-val') + '">' + fmt(e.value) + '</span>';
+      // Billing override for next 2 forecast months
+      if (field === 'billing' && isNextTwo) {
+        const ov = j.billingOverrides && j.billingOverrides[m] !== undefined ? j.billingOverrides[m] : '';
+        const isSet = ov !== '';
+        return '<div style="display:flex;flex-direction:column;gap:2px">'
+          + '<input class="actual-input" type="number" placeholder="' + Math.round(e.value) + '" value="' + ov + '" title="Override forecast billing for ' + monthLabel(m) + '. Leave blank to use even spread." onchange="setBillingOverride(' + activeActualsJob + ',\'' + m + '\',this.value)" style="border-color:#2563eb;border-width:2px">'
+          + '<span style="font-size:10px;color:' + (isSet ? '#1d4ed8' : '#9ca3af') + '">' + (isSet ? '✎ override' : '✎ edit forecast') + '</span>'
+          + '</div>';
+      }
+      return '<span class="' + (e.type === 'reforecast' ? 'reforecast-val' : e.type === 'override' ? 'override-val' : 'forecast-val') + '">' + fmt(e.value) + '</span>';
     }
 
     tbl += '<tr style="' + bg + '">'

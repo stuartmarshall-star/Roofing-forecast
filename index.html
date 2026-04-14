@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.50-Apr-14-19:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.52-Apr-14-21:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.50-Apr-14-19:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.52-Apr-14-21:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -320,22 +320,28 @@
   <div class="modal">
     <div class="modal-title" id="modal-title">Add job</div>
     <div class="form-grid">
+      <!-- TODO: Add required attribute and asterisk label to f-name, f-client -->
+      <!-- f-name should pre-populate from QB E-number when triggered from new project alert -->
       <div><label>Job reference</label><input id="f-name" placeholder="e.g. RF-2025-001"></div>
       <div><label>Client</label><input id="f-client" placeholder="Client name"></div>
       <div><label>Project name</label><input id="f-project" placeholder="e.g. 14 Mill Lane reroofing"></div>
     </div>
     <div class="form-grid">
       <div><label>Status</label><select id="f-status"><option value="active">Active</option><option value="future">Future</option><option value="complete">Complete</option></select></div>
+      <!-- TODO: f-start and f-dur should be required. f-start could pre-populate from QB CreateTime month -->
       <div><label>Start month</label><input type="text" id="f-start" placeholder="MM/YY" style="width:100px"></div>
       <div><label>Duration (months)</label><input type="number" id="f-dur" min="1" max="240" value="3"><div id="f-dur-lock" style="display:none"></div></div>
     </div>
     <div class="form-grid">
+      <!-- TODO: f-contract should be required — no forecast is possible without a contract value -->
       <div><label>Contracted value (£)</label><input type="number" id="f-contract" placeholder="0"></div>
       <div></div>
       <div></div>
     </div>
     <div class="sub-label">Forecast costs (total for whole job £)</div>
     <div class="form-grid">
+      <!-- TODO: At minimum f-labour + f-materials + f-overhead should be required (or at least one > 0) -->
+      <!-- QB does not hold cost budgets — these must always be entered manually by the user -->
       <div><label>Labour</label><input type="number" id="f-labour" placeholder="0"></div>
       <div><label>Materials</label><input type="number" id="f-materials" placeholder="0"></div>
       <div><label>Overhead / Other</label><input type="number" id="f-overhead" placeholder="0"></div>
@@ -3607,6 +3613,18 @@ async function saveJob() {
   const name = document.getElementById('f-name').value.trim();
   if (!name) { alert('Please enter a job name.'); return; }
 
+  // TODO: Add required field validation before saving:
+  // - f-start: must be a valid month (parseMonthInput returns non-empty)
+  // - f-contract: must be > 0 (no point in a job with no contract value)
+  // - f-labour + f-materials + f-overhead: at least one should be > 0, or warn
+  //   that the forecast will show no costs
+  // - f-client: should be required so reports and proposals are meaningful
+  // Example pattern:
+  //   const contractVal = parseFloat(document.getElementById('f-contract').value) || 0;
+  //   if (!startVal) { alert('Please enter a start month.'); return; }
+  //   if (contractVal <= 0) { alert('Please enter a contract value.'); return; }
+  // This validation should also fire when a job is pre-populated from a QB new project alert.
+
   const isExisting = document.getElementById('f-existing').checked;
   const startVal = parseMonthInput(document.getElementById('f-start').value);
   const durEl = document.getElementById('f-dur');
@@ -3999,6 +4017,15 @@ async function qboSync(silent = false) {
       alert.id = 'qbo-new-projects-alert';
       alert.style.cssText = 'margin:8px 16px;padding:10px 14px;background:#fefce8;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#a16207';
       const rows = a.newProjects.map(p =>
+        // TODO: Add an "Add to app →" button per row that opens the Add Job modal
+        // and pre-populates: f-name with p.eNum, f-client with the QB customer name
+        // (stripped of E-number prefix), f-start with p.created month if available.
+        // All cost fields (f-labour, f-materials, f-overhead, f-contract) should be
+        // left blank and flagged as required before saving — the user must supply these
+        // as QB does not hold cost budget data, only billing/cost actuals.
+        // Consider making f-contract, f-labour, f-materials, f-overhead, f-start
+        // required fields (HTML required attribute + JS validation in saveJob()) so
+        // a job cannot be saved without a contract value and start date at minimum.
         `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #fde68a">
           <span><b>${p.eNum}</b> — ${p.name}</span>
           <span style="color:#888">${p.created ? 'Created ' + new Date(p.created).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}</span>
@@ -4144,9 +4171,10 @@ async function generateSupplierProposal() {
   win.document.write(`<!DOCTYPE html><html><head><title>Supplier Proposal — Generating...</title><style>body{font-family:Arial,sans-serif;font-size:13px;margin:32px;max-width:800px;color:#1a1a1a}h1{font-size:18px}p{line-height:1.7;margin:8px 0}.status{color:#888;font-style:italic}@media print{button{display:none}}</style></head><body><h1>Roofing (South East) Limited — Supplier Proposal</h1><p class="status" id="status">✦ Generating with AI — please wait...</p><div id="content"></div></body></html>`);
   win.document.close();
   try {
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:`You are helping Stuart Marshall, owner of Roofing (South East) Limited, draft a supplier reassurance letter to Chandlers Roofing Supplies, his largest materials supplier. The letter should: 1. Acknowledge the current outstanding balance without stating a specific figure (Stuart will insert the exact amount). 2. Present the forward billing pipeline as clear evidence of strong cashflow recovery. 3. Propose clearing arrears over 3 months alongside continuing normal trading terms. 4. Mention that a debt restructuring facility is being put in place to strengthen the cashflow position. 5. Be professional, confident and concise — one page maximum. 6. Request continued supply on normal terms during the repayment period. Use this live forecast data:\n${dataContext}\nWrite as a formal business letter from Stuart Marshall to Chandlers. Do not invent figures not in the data above. Sign off as Stuart Marshall, Director, Roofing (South East) Limited.`}]})});
+    const res=await fetch(QBO_FUNCTIONS_BASE+'/ai-proposal',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_ANON_KEY},body:JSON.stringify({dataContext})});
     const data=await res.json();
-    const text=data.content?.[0]?.text||'No response received.';
+    if(!data.success) throw new Error(data.error||'Proposal generation failed');
+    const text=data.text||'No response received.';
     const formatted=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>');
     if(win&&!win.closed){
       const s=win.document.getElementById('status');if(s){s.textContent='✓ Generated — review and edit before sending. Use Ctrl+P / Cmd+P to save as PDF.';s.style.color='#15803d';}

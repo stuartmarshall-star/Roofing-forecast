@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.52-Apr-14-21:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.53-Apr-14-22:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.52-Apr-14-21:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.53-Apr-14-22:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -4171,7 +4171,7 @@ async function generateSupplierProposal() {
   win.document.write(`<!DOCTYPE html><html><head><title>Supplier Proposal — Generating...</title><style>body{font-family:Arial,sans-serif;font-size:13px;margin:32px;max-width:800px;color:#1a1a1a}h1{font-size:18px}p{line-height:1.7;margin:8px 0}.status{color:#888;font-style:italic}@media print{button{display:none}}</style></head><body><h1>Roofing (South East) Limited — Supplier Proposal</h1><p class="status" id="status">✦ Generating with AI — please wait...</p><div id="content"></div></body></html>`);
   win.document.close();
   try {
-    const res=await fetch(QBO_FUNCTIONS_BASE+'/ai-proposal',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_ANON_KEY},body:JSON.stringify({dataContext})});
+    const res=await fetch(QBO_FUNCTIONS_BASE+'/AI-function',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_ANON_KEY},body:JSON.stringify({dataContext})});
     const data=await res.json();
     if(!data.success) throw new Error(data.error||'Proposal generation failed');
     const text=data.text||'No response received.';

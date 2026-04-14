@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.41-Apr-14-10:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.42-Apr-14-11:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.41-Apr-14-10:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.42-Apr-14-11:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -531,6 +531,7 @@ let saveTimer = null;
 let isConnected = false;
 let fcStartMonth = '';
 let fcLength = 12;
+let sumFromMonth = '';
 
 // ── Supabase helpers ─────────────────────────────────────────────────────────
 function sbHeaders() {
@@ -1193,13 +1194,25 @@ function renderSummary() {
   const next1 = addMonths(cur, 1), next2 = addMonths(cur, 2), next3 = addMonths(cur, 3);
 
   // ── Portfolio overview ──────────────────────────────────────────────────────
+  // sumFromMonth: only count jobs/actuals starting on or after this month
+  const fromM = sumFromMonth || '';
+
   let totalContract=0, totalCost=0, totalActCost=0, totalActBilling=0, totalHeld=0, totalReleased=0;
   const activeJobs = jobs.filter(j => j.status === 'active');
   jobs.forEach(j => {
-    totalContract += j.contract;
-    totalCost += j.labour + j.materials + j.overhead;
-    const months = getMonths(j.start, j.dur);
-    months.forEach(m => {
+    // If a from-filter is set, skip jobs that end before fromM
+    const jMonths = getMonths(j.start, j.dur);
+    const jEnd = jMonths[jMonths.length - 1];
+    if (fromM && jEnd < fromM) return; // job entirely before range
+
+    // Pro-rate contract and costs for jobs partially in range
+    const inRangeMonths = fromM ? jMonths.filter(m => m >= fromM) : jMonths;
+    const fraction = fromM && jMonths.length > 0 ? inRangeMonths.length / jMonths.length : 1;
+    totalContract += j.contract * fraction;
+    totalCost     += (j.labour + j.materials + j.overhead) * fraction;
+
+    jMonths.forEach(m => {
+      if (fromM && m < fromM) return;
       const a = j.actuals[m];
       if (a) {
         totalActCost    += (a.labour||0) + (a.materials||0) + (a.overhead||0);
@@ -1207,9 +1220,9 @@ function renderSummary() {
       }
     });
     const half = getRetentionTotal(j) / 2;
-    totalHeld += getRetentionTotal(j);
-    if (j.retentionReleases && j.retentionReleases.m1) totalReleased += half;
-    if (j.retentionReleases && j.retentionReleases.m2) totalReleased += half;
+    totalHeld += getRetentionTotal(j) * fraction;
+    if (j.retentionReleases && j.retentionReleases.m1) totalReleased += half * fraction;
+    if (j.retentionReleases && j.retentionReleases.m2) totalReleased += half * fraction;
   });
   const fcMarginPct = totalContract > 0 ? (totalContract - totalCost) / totalContract * 100 : 0;
   const actMarginPct = totalActBilling > 0 ? (totalActBilling - totalActCost) / totalActBilling * 100 : null;
@@ -1305,13 +1318,23 @@ function renderSummary() {
   // Portfolio overview
   const fcProfit = totalContract - totalCost;
   const actProfit = totalActBilling > 0 ? totalActBilling - totalActCost : null;
-  html += `<div style="font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Portfolio overview</div>
+  const fromLabel = fromM ? ' from ' + monthLabel(fromM) : ' — all time';
+  html += `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:.5rem">
+    <div style="font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em">Portfolio overview${fromLabel}</div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+      <label style="color:#888;white-space:nowrap">From month:</label>
+      <input type="month" value="${fromM ? fromM : ''}" placeholder="All time"
+        style="font-size:12px;padding:3px 7px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;color:#1a1a1a"
+        onchange="sumFromMonth = this.value ? this.value : ''; renderSummary()">
+      ${fromM ? `<button onclick="sumFromMonth='';renderSummary()" style="font-size:11px;padding:3px 8px;border:1px solid #d1d5db;border-radius:5px;background:#f9fafb;cursor:pointer;color:#6b7280">Clear</button>` : ''}
+    </div>
+  </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:1.5rem">
-    <div class="metric"><div class="metric-label">Total contracted value</div><div class="metric-value">${fmt(totalContract)}</div><div style="font-size:11px;color:#888;margin-top:2px">${jobs.length} jobs, ${activeJobs.length} active</div></div>
+    <div class="metric"><div class="metric-label">Total contracted value</div><div class="metric-value">${fmt(totalContract)}</div><div style="font-size:11px;color:#888;margin-top:2px">${fromM ? 'Jobs active from ' + monthLabel(fromM) : jobs.length + ' jobs, ' + activeJobs.length + ' active'}</div></div>
     <div class="metric"><div class="metric-label">Total forecast costs</div><div class="metric-value">${fmt(totalCost)}</div><div style="font-size:11px;color:#888;margin-top:2px">Labour + materials + overhead</div></div>
-    <div class="metric"><div class="metric-label">Forecast profit</div><div class="metric-value ${fcProfit >= 0 ? 'green' : 'red'}">${fmt(fcProfit)}</div><div style="font-size:11px;color:#888;margin-top:2px">Contract minus costs</div></div>
-    <div class="metric"><div class="metric-label">Forecast margin</div><div class="metric-value ${fcMarginPct >= 15 ? 'green' : 'red'}">${fmtPct(fcMarginPct)}</div><div style="font-size:11px;color:#888;margin-top:2px">Whole portfolio</div></div>
-    <div class="metric"><div class="metric-label">Actual profit to date</div><div class="metric-value ${actProfit !== null ? (actProfit >= 0 ? 'green' : 'red') : ''}">${actProfit !== null ? fmt(actProfit) : '—'}</div><div style="font-size:11px;color:#888;margin-top:2px">${actProfit !== null ? 'Billing minus costs' : 'No actuals yet'}</div></div>
+    <div class="metric"><div class="metric-label">Forecast profit</div><div class="metric-value ${fcProfit >= 0 ? 'green' : 'red'}">${fmt(fcProfit)}</div><div style="font-size:11px;color:#888;margin-top:2px">${fmtPct(fcMarginPct)} margin</div></div>
+    <div class="metric"><div class="metric-label">Actual billing to date</div><div class="metric-value">${fmt(totalActBilling)}</div><div style="font-size:11px;color:#888;margin-top:2px">${fromM ? 'From ' + monthLabel(fromM) : 'All actuals'}</div></div>
+    <div class="metric"><div class="metric-label">Actual profit to date</div><div class="metric-value ${actProfit !== null ? (actProfit >= 0 ? 'green' : 'red') : ''}">${actProfit !== null ? fmt(actProfit) : '—'}</div><div style="font-size:11px;color:#888;margin-top:2px">${actMarginPct !== null ? fmtPct(actMarginPct) + ' margin' : 'No actuals yet'}</div></div>
     <div class="metric"><div class="metric-label">Actual margin to date</div><div class="metric-value ${actMarginPct !== null ? (actMarginPct >= fcMarginPct ? 'green' : 'red') : ''}">${actMarginPct !== null ? fmtPct(actMarginPct) : '—'}</div><div style="font-size:11px;color:#888;margin-top:2px">${actMarginPct !== null ? (actMarginPct >= fcMarginPct ? 'Ahead of forecast' : 'Behind forecast') : 'No actuals yet'}</div></div>
     <div class="metric" style="cursor:pointer" onclick="showTab('retentions')"><div class="metric-label">Retention outstanding ↗</div><div class="metric-value red">${fmt(retOutstanding)}</div><div style="font-size:11px;color:#888;margin-top:2px">Held minus released</div></div>
   </div>`;
@@ -2622,19 +2645,20 @@ function renderForecastSection() {
       rmActMonths++;
     }
   });
-  const rmProfit   = rmTotalBilling - rmTotalCost;
-  const rmMargin   = rmTotalBilling > 0 ? rmProfit / rmTotalBilling * 100 : 0;
-  const rmNetCash  = rmTotalBilling + rmTotalRet + rmTotalCredits - rmTotalCost - rmTotalLiab;
-  const rmActProfit = rmActMonths > 0 ? rmActBilling - rmActCost : null;
-  const rmActMargin = rmActBilling > 0 ? (rmActBilling - rmActCost) / rmActBilling * 100 : null;
+  const rmGrossProfit  = rmTotalBilling - rmTotalCost;
+  const rmGrossMargin  = rmTotalBilling > 0 ? rmGrossProfit / rmTotalBilling * 100 : 0;
+  const rmNetProfit    = rmTotalBilling + rmTotalRet + rmTotalCredits - rmTotalCost - rmTotalLiab;
+  const rmNetMargin    = rmTotalBilling > 0 ? rmNetProfit / rmTotalBilling * 100 : 0;
+  const rmActProfit    = rmActMonths > 0 ? rmActBilling - rmActCost : null;
+  const rmActMargin    = rmActBilling > 0 ? (rmActBilling - rmActCost) / rmActBilling * 100 : null;
 
   const metricsHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:1.25rem">'
     + '<div class="metric"><div class="metric-label">Net billing in range</div><div class="metric-value">' + fmt(rmTotalBilling) + '</div><div style="font-size:11px;color:#888;margin-top:2px">After retention deducted</div></div>'
-    + '<div class="metric"><div class="metric-label">Total costs in range</div><div class="metric-value">' + fmt(rmTotalCost + rmTotalLiab) + '</div><div style="font-size:11px;color:#888;margin-top:2px">Job costs + liabilities</div></div>'
-    + '<div class="metric"><div class="metric-label">Forecast profit</div><div class="metric-value ' + (rmProfit >= 0 ? 'green' : 'red') + '">' + fmt(rmProfit) + '</div><div style="font-size:11px;color:#888;margin-top:2px">Billing minus job costs</div></div>'
-    + '<div class="metric"><div class="metric-label">Forecast margin</div><div class="metric-value ' + (rmMargin >= 15 ? 'green' : 'red') + '">' + fmtPct(rmMargin) + '</div><div style="font-size:11px;color:#888;margin-top:2px">% of net billing</div></div>'
-    + '<div class="metric"><div class="metric-label">Net working capital</div><div class="metric-value ' + (rmNetCash >= 0 ? 'green' : 'red') + '">' + fmt(rmNetCash) + '</div><div style="font-size:11px;color:#888;margin-top:2px">Incl. liabilities &amp; credits</div></div>'
-    + (rmActProfit !== null ? '<div class="metric"><div class="metric-label">Actual profit to date</div><div class="metric-value ' + (rmActProfit >= 0 ? 'green' : 'red') + '">' + fmt(rmActProfit) + '</div><div style="font-size:11px;color:#888;margin-top:2px">' + (rmActMargin !== null ? fmtPct(rmActMargin) + ' margin' : '') + '</div></div>' : '')
+    + '<div class="metric"><div class="metric-label">Total job costs in range</div><div class="metric-value">' + fmt(rmTotalCost) + '</div><div style="font-size:11px;color:#888;margin-top:2px">Labour + materials + overhead</div></div>'
+    + '<div class="metric"><div class="metric-label">Total liabilities in range</div><div class="metric-value ' + (rmTotalLiab > 0 ? 'red' : '') + '">' + fmt(rmTotalLiab) + '</div><div style="font-size:11px;color:#888;margin-top:2px">Fixed overheads &amp; debt service</div></div>'
+    + '<div class="metric"><div class="metric-label">Forecast gross profit</div><div class="metric-value ' + (rmGrossProfit >= 0 ? 'green' : 'red') + '">' + fmt(rmGrossProfit) + '</div><div style="font-size:11px;color:#888;margin-top:2px">' + fmtPct(rmGrossMargin) + ' of net billing</div></div>'
+    + '<div class="metric"><div class="metric-label">Forecast net profit</div><div class="metric-value ' + (rmNetProfit >= 0 ? 'green' : 'red') + '">' + fmt(rmNetProfit) + '</div><div style="font-size:11px;color:#888;margin-top:2px">' + fmtPct(rmNetMargin) + ' — incl. liabilities &amp; credits</div></div>'
+    + (rmActProfit !== null ? '<div class="metric"><div class="metric-label">Actual profit to date</div><div class="metric-value ' + (rmActProfit >= 0 ? 'green' : 'red') + '">' + fmt(rmActProfit) + '</div><div style="font-size:11px;color:#888;margin-top:2px">' + (rmActMargin !== null ? fmtPct(rmActMargin) + ' margin on actuals' : '') + '</div></div>' : '')
     + '</div>';
 
   contentEl.innerHTML = metricsHtml + `

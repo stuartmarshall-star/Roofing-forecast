@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.58-Apr-15-10:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.59-Apr-15-11:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.58-Apr-15-10:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.59-Apr-15-11:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -2918,9 +2918,12 @@ function renderForecastSection() {
     <th>Ret. received</th>
     <th>Credits</th>
     <th>Working capital</th>
+    <th>Cumulative</th>
   </tr></thead><tbody>`;
 
+  let cumulative = 0;
   rows.forEach((r, ri) => {
+    cumulative += r.cash;
     const cur = getCurrentMonth();
     const rowBg = r.m < cur ? 'background:#fafafa' : '';
     const retRecCell = r.tRetReceived > 0 ? `<span style="color:#0f766e;font-weight:600">+${fmt(r.tRetReceived)}</span>` : '<span style="color:#ccc">—</span>';
@@ -2968,10 +2971,11 @@ function renderForecastSection() {
       <td>${retRecCell}</td>
       <td>${r.tCreditsReceived > 0 ? `<span style="color:#6d28d9;font-weight:600">+${fmt(r.tCreditsReceived)}</span>` : '<span style="color:#ccc">—</span>'}</td>
       <td class="${r.cash>=0?'green':'red'}"><strong>${r.cash>=0?'+':''}${fmt(r.cash)}</strong></td>
+      <td class="${cumulative>=0?'green':'red'}" style="font-style:italic;opacity:0.85">${cumulative>=0?'+':''}${fmt(cumulative)}</td>
     </tr>`;
 
     let detailHtml = `<tr id="${detailId}" style="display:none">
-      <td colspan="6" style="padding:0;border-bottom:1px solid #e8e8e8">
+      <td colspan="7" style="padding:0;border-bottom:1px solid #e8e8e8">
         <div style="background:#f8f8f8;padding:10px 14px 10px 42px">
         <table style="width:100%;font-size:12px;border-collapse:collapse">
         <thead><tr style="color:#888">
@@ -3048,6 +3052,7 @@ function renderForecastSection() {
     <td style="color:#0f766e">${totRetRec>0?'+'+fmt(totRetRec):'—'}</td>
     <td style="color:#6d28d9">${totCredRec>0?'+'+fmt(totCredRec):'—'}</td>
     <td class="${totCash>=0?'green':'red'}">${totCash>=0?'+':''}${fmt(totCash)}</td>
+    <td class="${totCash>=0?'green':'red'}" style="font-style:italic">${totCash>=0?'+':''}${fmt(totCash)}</td>
   </tr>`;
   document.getElementById('ftable').innerHTML = fctbl + '</tbody></table></div>';
 }

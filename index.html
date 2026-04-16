@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.53-Apr-14-22:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.54-Apr-14-23:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.53-Apr-14-22:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.54-Apr-14-23:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -3999,7 +3999,9 @@ async function qboSync(silent = false) {
     const s = data.summary;
     const a = data.applied;
     const lastSyncStr = 'Last sync: ' + new Date().toLocaleDateString('en-GB', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+    const syncMode = s.syncMode === 'incremental' ? `incremental since ${s.sinceDateFilter}` : 'full sync';
     statusEl.textContent = (silent ? '✓ Auto-synced — ' : '✓ Synced — ')
+      + syncMode + ', '
       + s.projectsFound + ' projects, '
       + a.updated + ' jobs updated'
       + (a.depositsCreated ? ', ' + a.depositsCreated + ' deposit' + (a.depositsCreated > 1 ? 's' : '') + ' created' : '')

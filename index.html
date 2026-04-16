@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.54-Apr-14-23:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.55-Apr-15-00:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.54-Apr-14-23:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.55-Apr-15-00:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -3494,13 +3494,47 @@ function openAddJob() {
   document.getElementById('f-actuals-summary').style.display = 'none';
   document.getElementById('f-retention-calc').textContent = 'Retention held will be calculated automatically';
   const now = new Date(); document.getElementById('f-start').value = fmtMonthInput(now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
+  refreshClientDatalist();
   document.getElementById('modal-backdrop').classList.add('open');
+}
+
+function addJobFromQB(p) {
+  // Open the add job modal pre-populated with QB project data
+  openAddJob();
+  document.getElementById('f-name').value   = p.eNum || '';
+  document.getElementById('f-client').value = p.client || '';
+  document.getElementById('f-project').value = p.name || '';
+  // Set start month from QB CreateTime if available
+  if (p.created) {
+    const d = new Date(p.created);
+    document.getElementById('f-start').value = fmtMonthInput(
+      d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+    );
+  }
+  // Cost fields intentionally left blank — QB has no budget data, user must enter
+  document.getElementById('modal-title').textContent = 'Add job — from QuickBooks';
+}
+
+function refreshClientDatalist() {
+  // Build a unique sorted list of client names from existing jobs
+  const clients = [...new Set(jobs.map(j => j.client).filter(Boolean))].sort();
+  let dl = document.getElementById('client-datalist');
+  if (!dl) {
+    dl = document.createElement('datalist');
+    dl.id = 'client-datalist';
+    document.body.appendChild(dl);
+    // Wire up the datalist to the client input
+    const input = document.getElementById('f-client');
+    if (input) input.setAttribute('list', 'client-datalist');
+  }
+  dl.innerHTML = clients.map(c => `<option value="${c}">`).join('');
 }
 
 function editJob(idx) {
   editIdx = idx; const j = jobs[idx];
   document.getElementById('modal-title').textContent = 'Edit job';
   document.getElementById('f-name').value = j.name; document.getElementById('f-client').value = j.client;
+  refreshClientDatalist();
   document.getElementById('f-project').value = j.projectName || '';
   document.getElementById('f-start').value = fmtMonthInput(j.start); document.getElementById('f-dur').value = j.dur;
   document.getElementById('f-contract').value = j.contract; document.getElementById('f-labour').value = j.labour;
@@ -4019,18 +4053,12 @@ async function qboSync(silent = false) {
       alert.id = 'qbo-new-projects-alert';
       alert.style.cssText = 'margin:8px 16px;padding:10px 14px;background:#fefce8;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#a16207';
       const rows = a.newProjects.map(p =>
-        // TODO: Add an "Add to app →" button per row that opens the Add Job modal
-        // and pre-populates: f-name with p.eNum, f-client with the QB customer name
-        // (stripped of E-number prefix), f-start with p.created month if available.
-        // All cost fields (f-labour, f-materials, f-overhead, f-contract) should be
-        // left blank and flagged as required before saving — the user must supply these
-        // as QB does not hold cost budget data, only billing/cost actuals.
-        // Consider making f-contract, f-labour, f-materials, f-overhead, f-start
-        // required fields (HTML required attribute + JS validation in saveJob()) so
-        // a job cannot be saved without a contract value and start date at minimum.
-        `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #fde68a">
-          <span><b>${p.eNum}</b> — ${p.name}</span>
-          <span style="color:#888">${p.created ? 'Created ' + new Date(p.created).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}</span>
+        `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #fde68a;gap:12px">
+          <span><b>${p.eNum}</b>${p.client ? ' — ' + p.client : ''} ${p.name ? '<span style="color:#888">(' + p.name + ')</span>' : ''}</span>
+          <span style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+            <span style="color:#888;font-size:11px">${p.created ? new Date(p.created).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''}</span>
+            <button onclick="addJobFromQB(${JSON.stringify(p).replace(/"/g,'&quot;')})" style="padding:3px 10px;font-size:11px;background:#1d4ed8;color:white;border:none;border-radius:5px;cursor:pointer;font-family:inherit">+ Add to app</button>
+          </span>
         </div>`
       ).join('');
       alert.innerHTML = `<div style="font-weight:600;margin-bottom:6px">⚠ ${a.newProjects.length} new QB project${a.newProjects.length > 1 ? 's' : ''} not yet in the forecast app — add these jobs to include their data:</div>${rows}

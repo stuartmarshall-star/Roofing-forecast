@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.65-Apr-21-14:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.66-Apr-21-15:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.65-Apr-21-14:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.66-Apr-21-15:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -4302,12 +4302,15 @@ function exportForecastPDF() {
       tGrossBilling+=pb.gross;tRetHeld+=pb.ret;
     });
     const tC=tL+tM+tO,tLiab=getTotalLiabilitiesForMonth(m),tNetBilling=tGrossBilling-tRetHeld;
-    const tRet=getRetentionReceivedForMonth(m),tCred=getCreditReceivedForMonth(m);
-    const cash=tNetBilling+tRet+tCred-tC-tLiab;
-    return {m,tC,tNetBilling,tLiab,tRet,cash,isActual:m<cur};
+    const tRetActual=getRetentionReceivedForMonth(m),tCred=getCreditReceivedForMonth(m);
+    const tRetFinal=tRetActual>0?tRetActual:(m>=cur?getTotalRetentionReleaseForMonth(m):0);
+    const unalloc=m<cur?(unallocatedCosts[m]||{labour:0,materials:0}):{labour:0,materials:0};
+    const tCTotal=tC+(unalloc.labour||0)+(unalloc.materials||0);
+    const cash=tNetBilling+tRetFinal+tCred-tCTotal-tLiab;
+    return {m,tCTotal,tNetBilling,tLiab,tRetFinal,cash,isActual:m<cur};
   });
   let rmBil=0,rmCost=0,rmLiab=0,rmRet=0;
-  rows.forEach(r=>{rmBil+=r.tNetBilling;rmCost+=r.tCTotal;rmLiab+=r.tLiab;rmRet+=r.tRet;});
+  rows.forEach(r=>{rmBil+=r.tNetBilling;rmCost+=r.tCTotal;rmLiab+=r.tLiab;rmRet+=r.tRetFinal;});
   const grossProfit=rmBil-rmCost,netProfit=rmBil+rmRet-rmCost-rmLiab;
   const grossMargin=rmBil>0?grossProfit/rmBil*100:0,netMargin=rmBil>0?netProfit/rmBil*100:0;
   const rangeLabel=monthLabel(allMonths[0])+' – '+monthLabel(allMonths[allMonths.length-1]);
@@ -4317,7 +4320,7 @@ function exportForecastPDF() {
     const pct=bs.originalTotal>0?bs.actualSpent/bs.originalTotal*100:0;
     return `<tr><td>${j.name}</td><td>${j.client||'—'}</td><td>${j.projectName||'—'}</td><td style="text-align:right">${fmt(j.contract)}</td><td style="text-align:right">${fmt(bs.actualSpent)}</td><td style="text-align:right">${fmt(bs.balance)}</td><td style="text-align:right">${fmtPct(pct)}</td></tr>`;
   }).join('');
-  const monthRows=rows.map(r=>`<tr style="background:${r.isActual?'#f9fafb':'white'}"><td>${monthLabel(r.m)}</td><td style="text-align:right">${fmt(r.tNetBilling)}</td><td style="text-align:right">${fmt(r.tCTotal)}</td><td style="text-align:right">${r.tLiab>0?fmt(r.tLiab):'—'}</td><td style="text-align:right">${r.tRet>0?fmt(r.tRet):'—'}</td><td style="text-align:right;color:${r.cash>=0?'#15803d':'#dc2626'};font-weight:600">${(r.cash>=0?'+':'')+fmt(r.cash)}</td><td style="font-size:10px;color:#888">${r.isActual?'actual':'forecast'}</td></tr>`).join('');
+  const monthRows=rows.map(r=>`<tr style="background:${r.isActual?'#f9fafb':'white'}"><td>${monthLabel(r.m)}</td><td style="text-align:right">${fmt(r.tNetBilling)}</td><td style="text-align:right">${fmt(r.tCTotal)}</td><td style="text-align:right">${r.tLiab>0?fmt(r.tLiab):'—'}</td><td style="text-align:right">${r.tRetFinal>0?fmt(r.tRetFinal):'—'}</td><td style="text-align:right;color:${r.cash>=0?'#15803d':'#dc2626'};font-weight:600">${(r.cash>=0?'+':'')+fmt(r.cash)}</td><td style="font-size:10px;color:#888">${r.isActual?'actual':'forecast'}</td></tr>`).join('');
   const html=`<!DOCTYPE html><html><head><title>RSE Forecast Snapshot — ${rangeLabel}</title>
   <style>body{font-family:Arial,sans-serif;font-size:12px;margin:24px;color:#1a1a1a}h1{font-size:18px;margin:0 0 2px}h2{font-size:13px;color:#555;font-weight:normal;margin:0 0 20px}h3{font-size:12px;font-weight:600;color:#1d4ed8;text-transform:uppercase;letter-spacing:.05em;margin:20px 0 8px;border-bottom:1px solid #dbeafe;padding-bottom:4px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}.m-box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px}.m-label{font-size:10px;color:#888;margin-bottom:3px}.m-val{font-size:15px;font-weight:700}.m-sub{font-size:10px;color:#888;margin-top:2px}.green{color:#15803d}.red{color:#dc2626}table{width:100%;border-collapse:collapse;margin-bottom:16px}th{background:#f0f4ff;padding:6px 8px;text-align:left;border:1px solid #ddd;font-size:11px}td{padding:5px 8px;border:1px solid #eee;font-size:11px}tfoot td{background:#f0f4ff;font-weight:bold;border:1px solid #ddd}.footer{margin-top:24px;font-size:9px;color:#aaa;border-top:1px solid #eee;padding-top:8px}@media print{body{margin:10px}}</style></head><body>
   <h1>Roofing (South East) Limited — Forecast Snapshot</h1>

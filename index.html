@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.61-Apr-21-10:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.63-Apr-21-12:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.61-Apr-21-10:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.63-Apr-21-12:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -216,6 +216,14 @@
           <option value="24">24 months</option>
           <option value="all">All jobs (start to end)</option>
         </select>
+      </div>
+      <div>
+        <label style="margin-bottom:4px">CIS labour % <span style="font-size:10px;color:#888;font-weight:normal">(of contract, CIS jobs)</span></label>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="number" id="fc-cis-labour-pct" value="40" min="0" max="100" style="width:60px" onchange="onCisLabourPctChange()" title="Labour as % of contract value — used to calculate CIS income reduction for CIS-applicable jobs">
+          <span style="font-size:12px;color:#888">%</span>
+          <span id="fc-cis-actual-pct" style="font-size:11px;color:#6b7280;white-space:nowrap"></span>
+        </div>
       </div>
       <div>
         <button class="btn" onclick="resetForecastControls()">Reset to today</button>
@@ -334,7 +342,7 @@
     </div>
     <div class="form-grid">
       <!-- TODO: f-contract should be required — no forecast is possible without a contract value -->
-      <div><label>Contracted value (£)</label><input type="number" id="f-contract" placeholder="0"></div>
+      <div><label>Contracted value (£)</label><input type="number" id="f-contract" placeholder="0" oninput="updateRetentionCalc()"></div>
       <div></div>
       <div></div>
     </div>
@@ -363,20 +371,9 @@
         </select>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;margin-top:-4px">
-      <input type="checkbox" id="f-cis" style="width:auto;cursor:pointer" onchange="toggleCisFields()">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;margin-top:-4px">
+      <input type="checkbox" id="f-cis" style="width:auto;cursor:pointer">
       <label for="f-cis" style="font-size:13px;color:#1a1a1a;cursor:pointer;margin:0">CIS applicable — contractor deducts 20% CIS on labour</label>
-    </div>
-    <div id="f-cis-fields" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 14px;margin-bottom:1rem">
-      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-        <div style="display:flex;align-items:center;gap:8px">
-          <label style="font-size:12px;color:#0369a1;white-space:nowrap;margin:0">Labour % of contract value:</label>
-          <input type="number" id="f-cis-labour-pct" value="40" min="0" max="100" style="width:65px;font-size:12px;padding:4px 6px;border:1px solid #7dd3fc;border-radius:5px;font-family:inherit" oninput="updateCisCalc()">
-          <span style="font-size:12px;color:#0369a1">%</span>
-        </div>
-        <div id="f-cis-calc" style="font-size:12px;color:#0369a1"></div>
-      </div>
-      <div id="f-cis-actual-pct" style="font-size:11px;color:#64748b;margin-top:6px"></div>
     </div>
     <div style="font-size:12px;color:#888;margin-bottom:1rem;margin-top:-6px">First 50% released on job completion. Balance released at end of defects period.</div>
 
@@ -558,14 +555,16 @@ let fcStartMonth = '';
 let fcLength = 12;
 let sumFromMonth = '';
 let appStartMonth = '';
-let fcChartMode = 'bar'; // 'bar' | 'line' // shared app-wide start date, set on forecast page
+let fcChartMode = 'bar';
+let cisLabourPct = 40; // app-wide CIS labour % of contract, set on Forecast page // 'bar' | 'line' // shared app-wide start date, set on forecast page
 
 // ── Persistence helpers ───────────────────────────────────────────────────────
 function savePrefs() {
   try {
-    localStorage.setItem('rf_fcStart',   fcStartMonth  || '');
-    localStorage.setItem('rf_fcLength',  String(fcLength));
-    localStorage.setItem('rf_appStart',  appStartMonth || '');
+    localStorage.setItem('rf_fcStart',      fcStartMonth  || '');
+    localStorage.setItem('rf_fcLength',     String(fcLength));
+    localStorage.setItem('rf_appStart',     appStartMonth || '');
+    localStorage.setItem('rf_cisLabourPct', String(cisLabourPct));
   } catch(e) {}
 }
 function loadPrefs() {
@@ -575,6 +574,7 @@ function loadPrefs() {
     fcLength      = len === 'all' ? 'all' : (parseInt(len) || 12);
     appStartMonth = localStorage.getItem('rf_appStart') || fcStartMonth;
     sumFromMonth  = appStartMonth;
+    cisLabourPct  = parseFloat(localStorage.getItem('rf_cisLabourPct')) || 40;
   } catch(e) {}
 }
 function getLastSyncTime() {
@@ -668,7 +668,7 @@ async function loadJobs() {
     setupRealtime();
     initForecastControls();
     renderAll();
-    // Check if we should prompt for last month's closing balance
+    updateCisActualPct();
   } catch(e) {
     isConnected = false;
     setStatus('error', 'Could not connect: ' + e.message);
@@ -834,7 +834,7 @@ function fmtPct(n) { return (Math.round(n * 10) / 10).toFixed(1) + '%'; }
 function netBillingTotal(job) {
   const afterRetention = job.contract * (1 - (job.retention || 0) / 100);
   if (!job.cis) return afterRetention;
-  const labourPct = (job.cisLabourPct || 40) / 100;
+  const labourPct = cisLabourPct / 100; // app-wide setting
   const cisMultiplier = 1 - (0.20 * labourPct);
   return afterRetention * cisMultiplier;
 }
@@ -2644,7 +2644,6 @@ function getForecastMonths() {
 }
 
 function initForecastControls() {
-  // If saved prefs exist, use them; otherwise default to earliest job or current month
   if (!fcStartMonth) {
     const start = getEarliestJobStart();
     fcStartMonth = start;
@@ -2654,6 +2653,26 @@ function initForecastControls() {
   if (startEl) startEl.value = fmtMonthInput(fcStartMonth);
   const lenEl = document.getElementById('fc-length');
   if (lenEl) lenEl.value = fcLength === 'all' ? 'all' : String(fcLength);
+  const cisEl = document.getElementById('fc-cis-labour-pct');
+  if (cisEl) cisEl.value = String(cisLabourPct);
+  updateCisActualPct();
+}
+
+function onCisLabourPctChange() {
+  const val = parseFloat(document.getElementById('fc-cis-labour-pct').value);
+  if (!isNaN(val)) { cisLabourPct = val; savePrefs(); renderForecastSection(); }
+}
+
+function updateCisActualPct() {
+  // Portfolio actual: total labour budget ÷ total contract value across all jobs
+  const el = document.getElementById('fc-cis-actual-pct');
+  if (!el || !jobs.length) return;
+  const totalContract = jobs.reduce((s, j) => s + (j.contract || 0), 0);
+  const totalLabour   = jobs.reduce((s, j) => s + (j.labour   || 0), 0);
+  if (totalContract > 0) {
+    const pct = (totalLabour / totalContract * 100).toFixed(1);
+    el.textContent = `(portfolio actual: ${pct}%)`;
+  }
 }
 
 function onFcLengthChange() {

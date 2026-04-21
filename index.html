@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.64-Apr-21-13:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.65-Apr-21-14:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.64-Apr-21-13:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.65-Apr-21-14:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -550,6 +550,7 @@ const SB_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 let jobs = [];
 let liabilities = [];
 let credits = [];
+let unallocatedCosts = {}; // { [month]: { labour, materials } } — from QB bills with no E-number
 let editCreditIdx = null;
 let editIdx = null;
 let editLiabIdx = null;
@@ -663,14 +664,20 @@ function setSaving(msg) { document.getElementById('saving-indicator').textConten
 async function loadJobs() {
   setStatus('connecting', 'Connecting to your database...');
   try {
-    const [jobData, liabData, creditData] = await Promise.all([
+    const [jobData, liabData, creditData, unallocData] = await Promise.all([
       sbFetch('jobs?select=*&order=created_at.asc'),
       sbFetch('liabilities?select=*&order=created_at.asc').catch(() => []),
-      sbFetch('credits?select=*&order=created_at.asc').catch(() => [])
+      sbFetch('credits?select=*&order=created_at.asc').catch(() => []),
+      sbFetch('unallocated_costs?select=*').catch(() => [])
     ]);
     jobs = jobData.map(dbToJob);
     liabilities = liabData.map(dbToLiab);
     credits = creditData.map(dbToCredit);
+    // Build unallocatedCosts lookup by month
+    unallocatedCosts = {};
+    (unallocData || []).forEach(r => {
+      unallocatedCosts[r.month] = { labour: parseFloat(r.labour)||0, materials: parseFloat(r.materials)||0 };
+    });
 
     isConnected = true;
     setStatus('connected', 'Connected — all changes save automatically and sync live with your accountant');
@@ -2802,11 +2809,19 @@ function renderForecastSection() {
     });
     const tC = tL + tM + tO;
     const tLiab = getTotalLiabilitiesForMonth(m);
-    const tRetReceived = getRetentionReceivedForMonth(m);
+    // Retention: past months use actual received, future months use scheduled release dates.
+    // If already marked received in a future month, actuals take precedence.
+    const tRetActual = getRetentionReceivedForMonth(m);
+    const tRetFinal = tRetActual > 0 ? tRetActual : (m >= cur ? getTotalRetentionReleaseForMonth(m) : 0);
     const tCreditsReceived = getCreditReceivedForMonth(m);
+    // Add unallocated costs for this month (actuals only — past months)
+    const unalloc = m < cur ? (unallocatedCosts[m] || { labour: 0, materials: 0 }) : { labour: 0, materials: 0 };
+    const tUnallocLabour = unalloc.labour;
+    const tUnallocMaterials = unalloc.materials;
+    const tCTotal = tC + tUnallocLabour + tUnallocMaterials;
     const tNetBilling = tGrossBilling - tRetHeld;
-    const cash = tNetBilling + tRetReceived + tCreditsReceived - tC - tLiab;
-    return {m, tL, tM, tO, tC, tGrossBilling, tRetHeld, tNetBilling, tLiab, tRetReceived, tCreditsReceived, cash};
+    const cash = tNetBilling + tRetFinal + tCreditsReceived - tCTotal - tLiab;
+    return {m, tL, tM, tO, tC, tCTotal, tGrossBilling, tRetHeld, tNetBilling, tLiab, tRetFinal, tCreditsReceived, cash, tUnallocLabour, tUnallocMaterials};
   });
 
   if (forecastChartInst) { forecastChartInst.destroy(); forecastChartInst = null; }
@@ -2818,9 +2833,9 @@ function renderForecastSection() {
   let rmActBilling=0, rmActCost=0, rmActMonths=0;
   rows.forEach(r => {
     rmTotalBilling  += r.tNetBilling;
-    rmTotalCost     += r.tC;
+    rmTotalCost     += r.tCTotal;
     rmTotalLiab     += r.tLiab;
-    rmTotalRet      += r.tRetReceived;
+    rmTotalRet      += r.tRetFinal;
     rmTotalCredits  += r.tCreditsReceived;
     // Actuals = past months only
     if (r.m < cur) {
@@ -2843,7 +2858,7 @@ function renderForecastSection() {
 
   const metricsHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:1.25rem">'
     + '<div class="metric"><div class="metric-label">Net billing in range</div><div class="metric-value">' + fmt(rmTotalBilling) + '</div><div style="font-size:11px;color:#888;margin-top:2px">After retention deducted</div></div>'
-    + '<div class="metric"><div class="metric-label">Total job costs in range</div><div class="metric-value">' + fmt(rmTotalCost) + '</div><div style="font-size:11px;color:#888;margin-top:2px">Labour + materials + overhead</div></div>'
+    + '<div class="metric"><div class="metric-label">Total job costs in range</div><div class="metric-value">' + fmt(rmTotalCost) + '</div><div style="font-size:11px;color:#888;margin-top:2px">Labour + materials + overhead + unallocated</div></div>'
     + '<div class="metric"><div class="metric-label">Total liabilities in range</div><div class="metric-value ' + (rmTotalLiab > 0 ? 'red' : '') + '">' + fmt(rmTotalLiab) + '</div><div style="font-size:11px;color:#888;margin-top:2px">Fixed overheads &amp; debt service</div></div>'
     + '<div class="metric"><div class="metric-label">Forecast gross profit</div><div class="metric-value ' + (rmGrossProfit >= 0 ? 'green' : 'red') + '">' + fmt(rmGrossProfit) + '</div><div style="font-size:11px;color:#888;margin-top:2px">' + fmtPct(rmGrossMargin) + ' of net billing</div></div>'
     + '<div class="metric"><div class="metric-label">Forecast net profit</div><div class="metric-value ' + (rmNetProfit >= 0 ? 'green' : 'red') + '">' + fmt(rmNetProfit) + '</div><div style="font-size:11px;color:#888;margin-top:2px">' + fmtPct(rmNetMargin) + ' — incl. liabilities &amp; credits</div></div>'
@@ -2924,7 +2939,7 @@ function renderForecastSection() {
     });
     const costsData = allMonths.map(m => {
       const r = rows.find(row => row.m === m);
-      return r ? Math.round(r.tC + r.tLiab) : null;
+      return r ? Math.round(r.tCTotal + r.tLiab) : null;
     });
 
     // Determine where actuals end — last month strictly before current month
@@ -2986,7 +3001,7 @@ function renderForecastSection() {
         labels: allMonths.map(monthLabel),
         datasets: [
           { label: 'Net billing',        data: rows.map(r => Math.round(r.tNetBilling)),       backgroundColor: 'rgba(22,163,74,0.75)',  borderRadius: 3 },
-          { label: 'Retention received', data: rows.map(r => Math.round(r.tRetReceived)),       backgroundColor: 'rgba(15,118,110,0.75)', borderRadius: 3 },
+          { label: 'Retention received', data: rows.map(r => Math.round(r.tRetFinal)),       backgroundColor: 'rgba(15,118,110,0.75)', borderRadius: 3 },
           { label: 'Labour',             data: rows.map(r => -Math.round(r.tL)),                backgroundColor: 'rgba(220,38,38,0.75)',  borderRadius: 3 },
           { label: 'Materials',          data: rows.map(r => -Math.round(r.tM)),                backgroundColor: 'rgba(234,88,12,0.75)',  borderRadius: 3 },
           { label: 'Overhead',           data: rows.map(r => -Math.round(r.tO)),                backgroundColor: 'rgba(202,138,4,0.75)',  borderRadius: 3 },
@@ -3005,9 +3020,9 @@ function renderForecastSection() {
     });
   }
 
-  let totL=0,totM=0,totO=0,totGross=0,totRetHeld=0,totLiab=0,totRetRec=0,totCredRec=0;
-  rows.forEach(r=>{totL+=r.tL;totM+=r.tM;totO+=r.tO;totGross+=r.tGrossBilling;totRetHeld+=r.tRetHeld;totLiab+=r.tLiab;totRetRec+=r.tRetReceived;totCredRec+=r.tCreditsReceived;});
-  const totC=totL+totM+totO;
+  let totL=0,totM=0,totO=0,totGross=0,totRetHeld=0,totLiab=0,totRetRec=0,totCredRec=0,totUnallocL=0,totUnallocM=0;
+  rows.forEach(r=>{totL+=r.tL;totM+=r.tM;totO+=r.tO;totGross+=r.tGrossBilling;totRetHeld+=r.tRetHeld;totLiab+=r.tLiab;totRetRec+=r.tRetFinal;totCredRec+=r.tCreditsReceived;totUnallocL+=r.tUnallocLabour;totUnallocM+=r.tUnallocMaterials;});
+  const totC=totL+totM+totO+totUnallocL+totUnallocM;
   const totNet=totGross-totRetHeld;
   const totCash=totNet+totRetRec+totCredRec-totC-totLiab;
 
@@ -3031,7 +3046,11 @@ function renderForecastSection() {
     cumulative += r.cash;
     const cur = getCurrentMonth();
     const rowBg = r.m < cur ? 'background:#fafafa' : '';
-    const retRecCell = r.tRetReceived > 0 ? `<span style="color:#0f766e;font-weight:600">+${fmt(r.tRetReceived)}</span>` : '<span style="color:#ccc">—</span>';
+    const retActual = getRetentionReceivedForMonth(r.m);
+    const retScheduled = r.m >= cur && r.tRetFinal > 0 && retActual === 0;
+    const retRecCell = r.tRetFinal > 0
+      ? `<span style="color:#0f766e;font-weight:600">+${fmt(r.tRetFinal)}</span>${retScheduled ? '<span style="font-size:10px;color:#888;margin-left:4px">sched.</span>' : ''}`
+      : '<span style="color:#ccc">—</span>';
     const mPrev = prevMonth(r.m);
     const detailId = `detail-${ri}`;
 
@@ -3071,7 +3090,7 @@ function renderForecastSection() {
         <button onclick="toggleDetail('${detailId}','btn-${ri}')" id="btn-${ri}"
           style="width:22px;height:22px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:12px;margin-right:6px;line-height:1;vertical-align:middle">+</button>${monthLabel(r.m)}
       </td>
-      <td><strong>${fmt(r.tC + r.tLiab)}</strong><div style="font-size:11px;color:#888">L:${fmt(r.tL)} M:${fmt(r.tM)} O:${fmt(r.tO)}${r.tLiab>0?' Liab:'+fmt(r.tLiab):''}</div></td>
+      <td><strong>${fmt(r.tCTotal + r.tLiab)}</strong><div style="font-size:11px;color:#888">L:${fmt(r.tL)} M:${fmt(r.tM)} O:${fmt(r.tO)}${r.tUnallocLabour>0?' +UL:'+fmt(r.tUnallocLabour):''}${r.tUnallocMaterials>0?' +UM:'+fmt(r.tUnallocMaterials):''}${r.tLiab>0?' Liab:'+fmt(r.tLiab):''}</div></td>
       <td><strong>${fmt(r.tNetBilling)}</strong><div style="font-size:11px;color:#888">Gross:${fmt(r.tGrossBilling)}${r.tRetHeld>0?' Ret:-'+fmt(r.tRetHeld):''}</div></td>
       <td>${retRecCell}</td>
       <td>${r.tCreditsReceived > 0 ? `<span style="color:#6d28d9;font-weight:600">+${fmt(r.tCreditsReceived)}</span>` : '<span style="color:#ccc">—</span>'}</td>
@@ -3119,6 +3138,16 @@ function renderForecastSection() {
         <td colspan="5" style="padding:4px 8px">`;
       creditsThisMonth.forEach(c => { detailHtml += `<span style="color:#6d28d9;margin-right:12px">${c.name}: +${fmt(c.amount)}</span>`; });
       detailHtml += `</td></tr>`;
+    }
+
+    // Unallocated costs from QB bills with no E-number reference
+    if (r.tUnallocLabour > 0 || r.tUnallocMaterials > 0) {
+      detailHtml += `<tr style="border-top:1px solid #ddd;background:#fff7ed">
+        <td style="padding:4px 8px;font-weight:500;color:#c2410c">Unallocated (no project ref)</td>
+        <td style="text-align:right;padding:4px 8px;color:#c2410c">${r.tUnallocLabour>0?fmt(r.tUnallocLabour):'—'}</td>
+        <td style="text-align:right;padding:4px 8px;color:#c2410c">${r.tUnallocMaterials>0?fmt(r.tUnallocMaterials):'—'}</td>
+        <td colspan="5" style="padding:4px 8px;font-size:11px;color:#92400e">CIS labour and purchase bills with no customer reference — consider allocating to a job</td>
+      </tr>`;
     }
 
     // Totals footer
@@ -4165,7 +4194,7 @@ async function qboSync(silent = false) {
     // Reload jobs from Supabase to pick up new actuals
     await loadJobs();
 
-    // Surface new QBO projects not matched to any job in the app
+    // Surface new QB projects not matched to any job (recently created)
     if (a.newProjects?.length) {
       const existing = document.getElementById('qbo-new-projects-alert');
       if (existing) existing.remove();
@@ -4183,7 +4212,32 @@ async function qboSync(silent = false) {
       ).join('');
       alert.innerHTML = `<div style="font-weight:600;margin-bottom:6px">⚠ ${a.newProjects.length} new QB project${a.newProjects.length > 1 ? 's' : ''} not yet in the forecast app — add these jobs to include their data:</div>${rows}
         <div style="margin-top:6px"><a href="#" onclick="document.getElementById('qbo-new-projects-alert').remove();return false" style="color:#a16207;font-size:11px">Dismiss</a></div>`;
-      // Insert after header bar — use correct class and safe fallback
+      const header = document.querySelector('.header') || document.querySelector('header');
+      if (header && header.parentNode) {
+        header.parentNode.insertBefore(alert, header.nextSibling);
+      } else {
+        document.body.insertBefore(alert, document.body.firstElementChild);
+      }
+    }
+
+    // Surface E-numbers with post-Nov-25 activity not in the app as jobs
+    if (data.unmatchedActive?.length) {
+      const existing = document.getElementById('qbo-unmatched-alert');
+      if (existing) existing.remove();
+      const alert = document.createElement('div');
+      alert.id = 'qbo-unmatched-alert';
+      alert.style.cssText = 'margin:8px 16px;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#dc2626';
+      const rows = data.unmatchedActive.map(p =>
+        `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #fecaca;gap:12px">
+          <span><b>${p.eNum}</b>${p.client ? ' — ' + p.client : ''} ${p.name ? '<span style="color:#888">(' + p.name + ')</span>' : ''}</span>
+          <span style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+            <span style="color:#888;font-size:11px">First activity: ${p.firstActivity}</span>
+            <button onclick="addJobFromQB(${JSON.stringify(p).replace(/"/g,'&quot;')})" style="padding:3px 10px;font-size:11px;background:#dc2626;color:white;border:none;border-radius:5px;cursor:pointer;font-family:inherit">+ Add to app</button>
+          </span>
+        </div>`
+      ).join('');
+      alert.innerHTML = `<div style="font-weight:600;margin-bottom:6px">🔴 ${data.unmatchedActive.length} E-number${data.unmatchedActive.length > 1 ? 's' : ''} with activity since Nov 2025 not in the app — these costs and income are missing from your forecast:</div>${rows}
+        <div style="margin-top:6px"><a href="#" onclick="document.getElementById('qbo-unmatched-alert').remove();return false" style="color:#dc2626;font-size:11px">Dismiss</a></div>`;
       const header = document.querySelector('.header') || document.querySelector('header');
       if (header && header.parentNode) {
         header.parentNode.insertBefore(alert, header.nextSibling);
@@ -4253,7 +4307,7 @@ function exportForecastPDF() {
     return {m,tC,tNetBilling,tLiab,tRet,cash,isActual:m<cur};
   });
   let rmBil=0,rmCost=0,rmLiab=0,rmRet=0;
-  rows.forEach(r=>{rmBil+=r.tNetBilling;rmCost+=r.tC;rmLiab+=r.tLiab;rmRet+=r.tRet;});
+  rows.forEach(r=>{rmBil+=r.tNetBilling;rmCost+=r.tCTotal;rmLiab+=r.tLiab;rmRet+=r.tRet;});
   const grossProfit=rmBil-rmCost,netProfit=rmBil+rmRet-rmCost-rmLiab;
   const grossMargin=rmBil>0?grossProfit/rmBil*100:0,netMargin=rmBil>0?netProfit/rmBil*100:0;
   const rangeLabel=monthLabel(allMonths[0])+' – '+monthLabel(allMonths[allMonths.length-1]);
@@ -4263,7 +4317,7 @@ function exportForecastPDF() {
     const pct=bs.originalTotal>0?bs.actualSpent/bs.originalTotal*100:0;
     return `<tr><td>${j.name}</td><td>${j.client||'—'}</td><td>${j.projectName||'—'}</td><td style="text-align:right">${fmt(j.contract)}</td><td style="text-align:right">${fmt(bs.actualSpent)}</td><td style="text-align:right">${fmt(bs.balance)}</td><td style="text-align:right">${fmtPct(pct)}</td></tr>`;
   }).join('');
-  const monthRows=rows.map(r=>`<tr style="background:${r.isActual?'#f9fafb':'white'}"><td>${monthLabel(r.m)}</td><td style="text-align:right">${fmt(r.tNetBilling)}</td><td style="text-align:right">${fmt(r.tC)}</td><td style="text-align:right">${r.tLiab>0?fmt(r.tLiab):'—'}</td><td style="text-align:right">${r.tRet>0?fmt(r.tRet):'—'}</td><td style="text-align:right;color:${r.cash>=0?'#15803d':'#dc2626'};font-weight:600">${(r.cash>=0?'+':'')+fmt(r.cash)}</td><td style="font-size:10px;color:#888">${r.isActual?'actual':'forecast'}</td></tr>`).join('');
+  const monthRows=rows.map(r=>`<tr style="background:${r.isActual?'#f9fafb':'white'}"><td>${monthLabel(r.m)}</td><td style="text-align:right">${fmt(r.tNetBilling)}</td><td style="text-align:right">${fmt(r.tCTotal)}</td><td style="text-align:right">${r.tLiab>0?fmt(r.tLiab):'—'}</td><td style="text-align:right">${r.tRet>0?fmt(r.tRet):'—'}</td><td style="text-align:right;color:${r.cash>=0?'#15803d':'#dc2626'};font-weight:600">${(r.cash>=0?'+':'')+fmt(r.cash)}</td><td style="font-size:10px;color:#888">${r.isActual?'actual':'forecast'}</td></tr>`).join('');
   const html=`<!DOCTYPE html><html><head><title>RSE Forecast Snapshot — ${rangeLabel}</title>
   <style>body{font-family:Arial,sans-serif;font-size:12px;margin:24px;color:#1a1a1a}h1{font-size:18px;margin:0 0 2px}h2{font-size:13px;color:#555;font-weight:normal;margin:0 0 20px}h3{font-size:12px;font-weight:600;color:#1d4ed8;text-transform:uppercase;letter-spacing:.05em;margin:20px 0 8px;border-bottom:1px solid #dbeafe;padding-bottom:4px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}.m-box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px}.m-label{font-size:10px;color:#888;margin-bottom:3px}.m-val{font-size:15px;font-weight:700}.m-sub{font-size:10px;color:#888;margin-top:2px}.green{color:#15803d}.red{color:#dc2626}table{width:100%;border-collapse:collapse;margin-bottom:16px}th{background:#f0f4ff;padding:6px 8px;text-align:left;border:1px solid #ddd;font-size:11px}td{padding:5px 8px;border:1px solid #eee;font-size:11px}tfoot td{background:#f0f4ff;font-weight:bold;border:1px solid #ddd}.footer{margin-top:24px;font-size:9px;color:#aaa;border-top:1px solid #eee;padding-top:8px}@media print{body{margin:10px}}</style></head><body>
   <h1>Roofing (South East) Limited — Forecast Snapshot</h1>

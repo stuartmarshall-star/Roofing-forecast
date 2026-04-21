@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.66-Apr-21-15:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.67-Apr-21-16:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.66-Apr-21-15:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.67-Apr-21-16:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -2778,6 +2778,7 @@ function renderForecastSection() {
   const rangeEl = document.getElementById('fc-range-label');
   if (rangeEl) rangeEl.textContent = monthLabel(allMonths[0]) + ' – ' + monthLabel(allMonths[allMonths.length - 1]) + ' (' + allMonths.length + ' months)';
 
+  const cur = getCurrentMonth();
   const rows = allMonths.map(m => {
     const mPrev  = prevMonth(m);
     const mPrev2 = prevMonth(mPrev);
@@ -2828,7 +2829,6 @@ function renderForecastSection() {
   const chartH = allMonths.length > 18 ? 320 : 280;
 
   // ── Range metrics ────────────────────────────────────────────────────────────
-  const cur = getCurrentMonth();
   let rmTotalBilling=0, rmTotalCost=0, rmTotalLiab=0, rmTotalRet=0, rmTotalCredits=0;
   let rmActBilling=0, rmActCost=0, rmActMonths=0;
   rows.forEach(r => {

@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.67-Apr-21-16:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.68-Apr-21-17:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.67-Apr-21-16:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.68-Apr-21-17:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -2161,6 +2161,23 @@ async function markJobComplete(idx) {
   const closedMonths = effectiveMths.filter(m => m <= cur);
   const finalMonth = closedMonths[closedMonths.length - 1];
 
+  // Check for unbilled retention before completing
+  const totalRet = getRetentionTotal(j);
+  const rr = j.retentionReleases || {};
+  const retAlreadyInvoiced = (rr.m1 ? 1 : 0) + (rr.m2 ? 1 : 0);
+  const retOutstanding = totalRet > 0 && retAlreadyInvoiced < 2;
+
+  if (retOutstanding && totalRet > 0) {
+    const half = Math.round(totalRet / 2);
+    const m1Month = getFirstMoietyMonth(j);   // completion month = first release
+    const m2Month = getSecondMoietyMonth(j);  // after defects period
+    const msg = `${j.name} has retention outstanding:\n\n` +
+      `• 1st release (50% on completion): £${half.toLocaleString()} — due ${m1Month ? monthLabel(m1Month) : 'job end'}\n` +
+      `• 2nd release (balance after ${j.moiety || 12} month defects): £${half.toLocaleString()} — due ${m2Month ? monthLabel(m2Month) : 'TBC'}\n\n` +
+      `Go to the Retentions tab after completing to raise the first invoice and set the defects release date.\n\nContinue to mark job complete?`;
+    if (!confirm(msg)) return;
+  }
+
   if (finalMonth) {
     // Always show the final actuals modal — pre-fill with existing actuals or forecast values
     _completeJobIdx = idx;
@@ -2259,6 +2276,17 @@ function setBillingOverride(jobIdx, month, val) {
 function renderActualsSection() {
   const el = document.getElementById('actuals');
   if (!jobs.length) { el.innerHTML = '<div class="empty-state">No jobs yet.</div>'; return; }
+
+  // Filter to active/future jobs for the pills — completed jobs hidden by default
+  const showComplete = window._actualsShowComplete || false;
+  const visibleJobs = jobs.filter((jj, i) => jj.status !== 'complete' || i === activeActualsJob || showComplete);
+
+  // If activeActualsJob points to a complete job and we're not showing complete, reset to first visible
+  if (!showComplete && jobs[activeActualsJob]?.status === 'complete') {
+    const firstActive = jobs.findIndex(jj => jj.status !== 'complete');
+    if (firstActive >= 0) { activeActualsJob = firstActive; }
+  }
+
   const j = jobs[activeActualsJob]; if (!j) return;
   const months = getEffectiveMonths(j), cur = getCurrentMonth();
   const fields = ['labour', 'materials', 'overhead', 'billing'];
@@ -2270,13 +2298,21 @@ function renderActualsSection() {
     .sort();
   const allActualsMonths = [...preStartDepositMonths, ...months];
 
-  // Pills
+  // Pills — show active/future only (+ toggle for complete)
+  const completeCount = jobs.filter(jj => jj.status === 'complete').length;
   let pills = '<div class="pill-row">' + jobs.map((jj, i) => {
+    if (jj.status === 'complete' && !showComplete && i !== activeActualsJob) return '';
     const label = jj.projectName
       ? jj.name + ' <span style="opacity:.6;font-size:11px">&middot; ' + jj.projectName + '</span>'
       : jj.client ? jj.name + ' <span style="opacity:.6;font-size:11px">&middot; ' + jj.client + '</span>' : jj.name;
-    return '<button class="job-pill ' + (i === activeActualsJob ? 'active' : '') + '" onclick="setActualsJob(' + i + ')">' + label + '</button>';
-  }).join('') + '</div>';
+    const completeBadge = jj.status === 'complete' ? ' <span style="font-size:10px;opacity:.6">✓</span>' : '';
+    return '<button class="job-pill ' + (i === activeActualsJob ? 'active' : '') + '" onclick="setActualsJob(' + i + ')">' + label + completeBadge + '</button>';
+  }).join('');
+  if (completeCount > 0) {
+    pills += '<button onclick="window._actualsShowComplete=!' + showComplete + ';renderActualsSection()" style="font-size:11px;padding:4px 10px;border:1px solid #d1d5db;border-radius:12px;background:' + (showComplete?'#f3f4f6':'#fff') + ';color:#6b7280;cursor:pointer;font-family:inherit;margin-left:4px">'
+      + (showComplete ? 'Hide complete' : completeCount + ' complete — show') + '</button>';
+  }
+  pills += '</div>';
 
   const jobHeader = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:10px">'
     + '<div><div style="font-size:16px;font-weight:600">' + j.name + (j.projectName ? ' \u2014 ' + j.projectName : '') + '</div>'

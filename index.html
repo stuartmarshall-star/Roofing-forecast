@@ -58,6 +58,7 @@
   .actual-input { width: 100px !important; padding: 4px 8px !important; font-size: 12px !important; }
   .forecast-val { color: #aaa; font-style: italic; font-size: 12px; }
   .reforecast-val { color: #a16207; font-size: 12px; }
+  .actual-val { color: #1a1a1a; font-weight: 500; }
   .green { color: #16a34a; }
   .red { color: #dc2626; }
   .progress-bar-wrap { background: #f0f0f0; border-radius: 4px; height: 6px; margin-top: 3px; }
@@ -141,7 +142,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.69-Apr-21-18:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.71-Apr-22-09:00</div>
   </div>
 </div>
 
@@ -162,7 +163,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.69-Apr-21-18:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.71-Apr-22-09:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -930,6 +931,9 @@ function buildSchedule(job, field) {
       result[m] = { value: a, type: 'actual' };
     } else if (isComplete && field !== 'billing') {
       result[m] = { value: 0, type: 'complete' };
+    } else if (m < cur && hasActuals) {
+      // Past month with no actual entered — treat as zero (period is closed)
+      result[m] = { value: 0, type: 'actual' };
     } else if (field === 'billing' && activeOverrideMonths.has(m)) {
       result[m] = { value: overrides[m], type: 'override' };
     } else if (hasActuals) {
@@ -2542,9 +2546,7 @@ function renderActualsSection() {
 
     function cell(field) {
       const e = vals[field];
-      const a = j.actuals[m] && j.actuals[m][field] !== undefined ? j.actuals[m][field] : '';
-      if (isPast) return '<input class="actual-input" type="number" placeholder="' + Math.round(e.value) + '" value="' + a + '" onchange="setActual(' + activeActualsJob + ',\'' + m + '\',\'' + field + '\',this.value)">';
-      // Billing override for next 2 forecast months
+      // Billing override for next 2 forecast months — only editable cells in the table
       if (field === 'billing' && isNextTwo) {
         const ov = j.billingOverrides && j.billingOverrides[m] !== undefined ? j.billingOverrides[m] : '';
         const isSet = ov !== '';
@@ -2553,7 +2555,13 @@ function renderActualsSection() {
           + '<span style="font-size:10px;color:' + (isSet ? '#1d4ed8' : '#9ca3af') + '">' + (isSet ? '✎ override' : '✎ edit forecast') + '</span>'
           + '</div>';
       }
-      return '<span class="' + (e.type === 'reforecast' ? 'reforecast-val' : e.type === 'override' ? 'override-val' : 'forecast-val') + '">' + fmt(e.value) + '</span>';
+      // Everything else is read-only — show value with appropriate badge style
+      const dispVal = e.value;
+      const cls = e.type === 'actual' ? 'actual-val'
+                : e.type === 'reforecast' ? 'reforecast-val'
+                : e.type === 'override' ? 'override-val'
+                : 'forecast-val';
+      return '<span class="' + cls + '">' + fmt(dispVal) + '</span>';
     }
 
     tbl += '<tr style="' + bg + '">'

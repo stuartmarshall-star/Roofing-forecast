@@ -141,7 +141,7 @@
     </div>
     <div class="pin-error" id="pin-error"></div>
     <div class="pin-hint">Share this PIN with your accountant</div>
-    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.68-Apr-21-17:00</div>
+    <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.69-Apr-21-18:00</div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span class="saving" id="saving-indicator"></span>
-      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.68-Apr-21-17:00</span>
+      <span style="font-size:10px;color:#bbb;font-family:monospace;user-select:none" title="Build version">v2.69-Apr-21-18:00</span>
       <button id="btn-job-template" class="btn tab-btn-jobs" style="display:none" onclick="downloadCsvTemplate()">⬇ Job template</button>
       <button id="btn-import-jobs" class="btn tab-btn-jobs" style="display:none" onclick="document.getElementById('csv-file-input').click()">⬆ Import jobs</button>
       <button id="btn-actuals-template" class="btn tab-btn-actuals" style="display:none" onclick="downloadActualsTemplate()">⬇ Actuals template</button>
@@ -2305,12 +2305,16 @@ function renderActualsSection() {
     const label = jj.projectName
       ? jj.name + ' <span style="opacity:.6;font-size:11px">&middot; ' + jj.projectName + '</span>'
       : jj.client ? jj.name + ' <span style="opacity:.6;font-size:11px">&middot; ' + jj.client + '</span>' : jj.name;
-    const completeBadge = jj.status === 'complete' ? ' <span style="font-size:10px;opacity:.6">✓</span>' : '';
-    return '<button class="job-pill ' + (i === activeActualsJob ? 'active' : '') + '" onclick="setActualsJob(' + i + ')">' + label + completeBadge + '</button>';
+    const isComplete = jj.status === 'complete';
+    const completeBadge = isComplete ? ' <span style="font-size:10px;opacity:.8">✓</span>' : '';
+    const activeStyle = i === activeActualsJob
+      ? (isComplete ? 'background:#15803d;color:#fff;border-color:#15803d;' : 'background:#1a1a1a;color:#fff;border-color:#1a1a1a;')
+      : (isComplete ? 'background:#f0fdf4;color:#15803d;border-color:#86efac;' : '');
+    return '<button class="job-pill" style="' + activeStyle + '" onclick="setActualsJob(' + i + ')">' + label + completeBadge + '</button>';
   }).join('');
   if (completeCount > 0) {
-    pills += '<button onclick="window._actualsShowComplete=!' + showComplete + ';renderActualsSection()" style="font-size:11px;padding:4px 10px;border:1px solid #d1d5db;border-radius:12px;background:' + (showComplete?'#f3f4f6':'#fff') + ';color:#6b7280;cursor:pointer;font-family:inherit;margin-left:4px">'
-      + (showComplete ? 'Hide complete' : completeCount + ' complete — show') + '</button>';
+    pills += '<button onclick="window._actualsShowComplete=!' + showComplete + ';renderActualsSection()" style="font-size:11px;padding:4px 10px;border:1px solid #86efac;border-radius:12px;background:' + (showComplete?'#dcfce7':'#f0fdf4') + ';color:#15803d;cursor:pointer;font-family:inherit;margin-left:4px">'
+      + (showComplete ? '✓ Hide complete' : completeCount + ' complete ✓') + '</button>';
   }
   pills += '</div>';
 

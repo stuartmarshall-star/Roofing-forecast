@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Roofing Forecast v2</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #1a1a1a; font-size: 14px; }
@@ -141,7 +142,6 @@
       <button class="pin-btn del" onclick="pinDelete()">⌫</button>
     </div>
     <div class="pin-error" id="pin-error"></div>
-    <div class="pin-hint">Share this PIN with your accountant</div>
     <div style="margin-top:1.5rem;font-size:10px;color:#bbb;font-family:monospace">v2.74-Apr-22-12:00</div>
   </div>
 </div>
@@ -522,14 +522,30 @@ function updatePinDots(state) {
   }
 }
 
-function checkPin() {
-  if (pinEntry === CORRECT_PIN) {
-    try { sessionStorage.setItem('rf_auth', '1'); } catch(e) {}
-    document.getElementById('pin-screen').classList.add('hidden');
-  } else {
+async function checkPin() {
+  if (pinEntry !== CORRECT_PIN) {
     updatePinDots('error');
     document.getElementById('pin-error').textContent = 'Incorrect PIN — try again';
     setTimeout(() => { pinEntry = ''; updatePinDots(); document.getElementById('pin-error').textContent = ''; }, 1200);
+    return;
+  }
+  // PIN correct — now sign in to Supabase to get a real session JWT
+  document.getElementById('pin-error').textContent = 'Signing in...';
+  try {
+    const { data, error } = await sb.auth.signInWithPassword({
+      email: SB_AUTH_EMAIL,
+      password: SB_AUTH_PASSWORD
+    });
+    if (error) throw error;
+    sbSession = data.session;
+    try { sessionStorage.setItem('rf_auth', '1'); } catch(e) {}
+    document.getElementById('pin-error').textContent = '';
+    document.getElementById('pin-screen').classList.add('hidden');
+  } catch (err) {
+    console.error('Auth failed:', err);
+    updatePinDots('error');
+    document.getElementById('pin-error').textContent = 'Sign-in failed — check console';
+    setTimeout(() => { pinEntry = ''; updatePinDots(); document.getElementById('pin-error').textContent = ''; }, 2500);
   }
 }
 
@@ -547,6 +563,12 @@ document.addEventListener('keydown', e => {
 const SB_URL = 'https://asaedxtvehsjmrkdpegj.supabase.co';
 const SB_KEY = 'sb_publishable_IklQe45ab06L_eIrjeUeQg_wifiK9FA';
 const SB_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFzYWVkeHR2ZWhzam1ya2RwZWdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NjMyMDMsImV4cCI6MjA4OTMzOTIwM30.INMd5nl21PxHv6zQgruIPRXcHy2sELNIsErueXrZ7rI';
+
+// ── Supabase Auth client (for signed-in API calls) ───────────────────────────
+const SB_AUTH_EMAIL = 'stu@forecast.com';
+const SB_AUTH_PASSWORD = 'A8TzjrpuaQz*?Uh';
+const sb = supabase.createClient(SB_URL, SB_ANON_KEY);
+let sbSession = null;  // set after sign-in; holds the JWT for API calls
 
 let jobs = [];
 let liabilities = [];
@@ -597,10 +619,11 @@ function setLastSyncTime() {
 
 // ── Supabase helpers ─────────────────────────────────────────────────────────
 function sbHeaders() {
+  const token = (sbSession && sbSession.access_token) ? sbSession.access_token : SB_KEY;
   return {
     'Content-Type': 'application/json',
     'apikey': SB_KEY,
-    'Authorization': 'Bearer ' + SB_KEY,
+    'Authorization': 'Bearer ' + token,
     'Prefer': 'return=representation'
   };
 }
